@@ -5,46 +5,20 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.db import get_pool
 from app.deps import get_current_member_id, require_admin
-from app.routers.projects import _row_to_project
-from app.schemas import (
-    LeaderboardEntry,
-    MyVoteOut,
-    RsvpAvatar,
-    RsvpOut,
-    RsvpRequest,
-    RsvpsGrouped,
-    SessionCreate,
-    SessionDetail,
-    SessionOut,
-    SessionUpdate,
-    VoteOut,
-    VoteRequest,
-)
+from app.events import log_event
+from app.schemas import CheckinEntry, CheckinOut, SessionCreate, SessionOut
 
 router = APIRouter(tags=["sessions"])
 
 
-SESSION_COLUMNS = "id, title, topic, venue, starts_at, voting_open, cover_image_url, host_blurb"
-
-
 def _row_to_session(row: asyncpg.Record) -> SessionOut:
-    return SessionOut(
-        id=row["id"],
-        title=row["title"],
-        topic=row["topic"],
-        venue=row["venue"],
-        starts_at=row["starts_at"],
-        voting_open=row["voting_open"],
-        cover_image_url=row["cover_image_url"],
-        host_blurb=row["host_blurb"],
-    )
+    return SessionOut(id=row["id"], title=row["title"], topic=row["topic"], venue=row["venue"], starts_at=row["starts_at"])
 
 
-async def _get_session_or_404(pool: asyncpg.Pool, session_id: UUID) -> asyncpg.Record:
-    row = await pool.fetchrow("select * from sessions where id = $1", session_id)
-    if row is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session not found")
-    return row
+@router.get("/sessions", response_model=list[SessionOut])
+async def list_sessions(pool: asyncpg.Pool = Depends(get_pool)):
+    rows = await pool.fetch("select id, title, topic, venue, starts_at from sessions order by starts_at asc")
+    return [_row_to_session(row) for row in rows]
 
 
 @router.post(
@@ -55,221 +29,61 @@ async def _get_session_or_404(pool: asyncpg.Pool, session_id: UUID) -> asyncpg.R
 )
 async def create_session(body: SessionCreate, pool: asyncpg.Pool = Depends(get_pool)):
     row = await pool.fetchrow(
-        f"""
-        insert into sessions (title, topic, venue, starts_at, cover_image_url, host_blurb)
-        values ($1, $2, $3, $4, $5, $6)
-        returning {SESSION_COLUMNS}
+        """
+        insert into sessions (title, topic, venue, starts_at)
+        values ($1, $2, $3, $4)
+        returning id, title, topic, venue, starts_at
         """,
         body.title,
         body.topic,
         body.venue,
         body.starts_at,
-        body.cover_image_url,
-        body.host_blurb,
     )
     return _row_to_session(row)
 
 
-@router.get("/sessions", response_model=list[SessionOut])
-async def list_sessions(pool: asyncpg.Pool = Depends(get_pool)):
-    rows = await pool.fetch(
-        f"select {SESSION_COLUMNS} from sessions order by starts_at asc"
-    )
-    return [_row_to_session(row) for row in rows]
+@router.post("/sessions/{session_id}/checkin", response_model=CheckinOut, status_code=status.HTTP_201_CREATED)
+async def checkin(
+    session_id: UUID,
+    member_id: UUID = Depends(get_current_member_id),
+    pool: asyncpg.Pool = Depends(get_pool),
+):
+    session_exists = await pool.fetchval("select 1 from sessions where id = $1", session_id)
+    if session_exists is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session not found")
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            try:
+                row = await conn.fetchrow(
+                    """
+                    insert into checkins (session_id, member_id)
+                    values ($1, $2)
+                    returning session_id, member_id, created_at
+                    """,
+                    session_id,
+                    member_id,
+                )
+            except asyncpg.UniqueViolationError:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="already checked in")
+            await log_event(conn, member_id, "checkin", {"session_id": str(session_id)})
+
+    return CheckinOut(session_id=row["session_id"], member_id=row["member_id"], created_at=row["created_at"])
 
 
-@router.get("/sessions/{session_id}", response_model=SessionDetail)
-async def get_session(session_id: UUID, pool: asyncpg.Pool = Depends(get_pool)):
-    session_row = await _get_session_or_404(pool, session_id)
-
-    rsvp_rows = await pool.fetch(
-        "select status, count(*) as count from rsvps where session_id = $1 group by status",
-        session_id,
-    )
-    rsvp_counts = {"going": 0, "maybe": 0, "no": 0}
-    for r in rsvp_rows:
-        rsvp_counts[r["status"]] = r["count"]
-
-    project_rows = await pool.fetch(
-        """
-        select p.id, p.title, p.tagline, p.link, p.repo_url, p.image_url, p.session_id, p.created_at,
-               m.id as owner_id, m.name as owner_name, m.avatar_url as owner_avatar
-        from projects p
-        join members m on m.id = p.owner_id
-        where p.session_id = $1
-        order by p.created_at desc
-        """,
-        session_id,
-    )
-
-    return SessionDetail(
-        session=_row_to_session(session_row),
-        rsvp_counts=rsvp_counts,
-        projects=[_row_to_project(row) for row in project_rows],
-    )
-
-
-@router.patch(
-    "/sessions/{session_id}",
-    response_model=SessionOut,
-    dependencies=[Depends(require_admin)],
-)
-async def update_session(session_id: UUID, body: SessionUpdate, pool: asyncpg.Pool = Depends(get_pool)):
-    await _get_session_or_404(pool, session_id)
-    fields = body.model_dump(exclude_unset=True)
-    if fields:
-        set_clauses = []
-        values: list = []
-        for i, (key, value) in enumerate(fields.items(), start=1):
-            set_clauses.append(f"{key} = ${i}")
-            values.append(value)
-        values.append(session_id)
-        await pool.execute(
-            f"update sessions set {', '.join(set_clauses)} where id = ${len(values)}",
-            *values,
-        )
-    row = await pool.fetchrow(
-        f"select {SESSION_COLUMNS} from sessions where id = $1",
-        session_id,
-    )
-    return _row_to_session(row)
-
-
-@router.get("/sessions/{session_id}/leaderboard", response_model=list[LeaderboardEntry])
-async def leaderboard(session_id: UUID, pool: asyncpg.Pool = Depends(get_pool)):
+@router.get("/sessions/{session_id}/checkins", response_model=list[CheckinEntry])
+async def list_checkins(session_id: UUID, pool: asyncpg.Pool = Depends(get_pool)):
     rows = await pool.fetch(
         """
-        select p.id, p.title, p.image_url,
-               m.name as owner_name, m.avatar_url as owner_avatar,
-               coalesce(sum(v.score), 0) as score,
-               count(v.id) as vote_count
-        from projects p
-        join members m       on m.id = p.owner_id
-        left join votes v    on v.project_id = p.id
-        where p.session_id = $1
-        group by p.id, m.name, m.avatar_url
-        order by score desc, vote_count desc, p.created_at asc
+        select c.created_at, m.name, m.epithet, m.ask
+        from checkins c
+        join members m on m.id = c.member_id
+        where c.session_id = $1
+        order by c.created_at desc
         """,
         session_id,
     )
     return [
-        LeaderboardEntry(
-            project_id=row["id"],
-            title=row["title"],
-            owner_name=row["owner_name"],
-            owner_avatar=row["owner_avatar"],
-            image_url=row["image_url"],
-            score=row["score"],
-            vote_count=row["vote_count"],
-            rank=i + 1,
-        )
-        for i, row in enumerate(rows)
+        CheckinEntry(name=row["name"], epithet=row["epithet"], ask=row["ask"], created_at=row["created_at"])
+        for row in rows
     ]
-
-
-@router.put("/sessions/{session_id}/rsvp", response_model=RsvpOut)
-async def upsert_rsvp(
-    session_id: UUID,
-    body: RsvpRequest,
-    member_id: UUID = Depends(get_current_member_id),
-    pool: asyncpg.Pool = Depends(get_pool),
-):
-    await _get_session_or_404(pool, session_id)
-    row = await pool.fetchrow(
-        """
-        insert into rsvps (member_id, session_id, status, plus_ones)
-        values ($1, $2, $3, $4)
-        on conflict (member_id, session_id)
-            do update set status = excluded.status, plus_ones = excluded.plus_ones
-        returning member_id, session_id, status, coalesce(plus_ones, 0) as plus_ones
-        """,
-        member_id,
-        session_id,
-        body.status,
-        body.plus_ones,
-    )
-    return RsvpOut(
-        session_id=row["session_id"],
-        member_id=row["member_id"],
-        status=row["status"],
-        plus_ones=row["plus_ones"],
-    )
-
-
-@router.get("/sessions/{session_id}/rsvps", response_model=RsvpsGrouped)
-async def list_rsvps(session_id: UUID, pool: asyncpg.Pool = Depends(get_pool)):
-    await _get_session_or_404(pool, session_id)
-    rows = await pool.fetch(
-        """
-        select r.status, coalesce(r.plus_ones, 0) as plus_ones, m.id, m.name, m.avatar_url
-        from rsvps r
-        join members m on m.id = r.member_id
-        where r.session_id = $1
-        order by r.created_at asc
-        """,
-        session_id,
-    )
-    grouped: dict[str, list[RsvpAvatar]] = {"going": [], "maybe": [], "no": []}
-    for row in rows:
-        grouped[row["status"]].append(
-            RsvpAvatar(
-                id=row["id"],
-                name=row["name"],
-                avatar_url=row["avatar_url"],
-                plus_ones=row["plus_ones"],
-            )
-        )
-    return RsvpsGrouped(**grouped)
-
-
-@router.post("/sessions/{session_id}/vote", response_model=VoteOut, status_code=status.HTTP_201_CREATED)
-async def cast_vote(
-    session_id: UUID,
-    body: VoteRequest,
-    voter_id: UUID = Depends(get_current_member_id),
-    pool: asyncpg.Pool = Depends(get_pool),
-):
-    session_row = await _get_session_or_404(pool, session_id)
-    if not session_row["voting_open"]:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="voting is closed for this session")
-
-    project_row = await pool.fetchrow(
-        "select owner_id from projects where id = $1 and session_id = $2",
-        body.project_id,
-        session_id,
-    )
-    if project_row is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not in this session")
-    if project_row["owner_id"] == voter_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="cannot vote for your own project")
-
-    try:
-        row = await pool.fetchrow(
-            """
-            insert into votes (voter_id, project_id, session_id, score)
-            values ($1, $2, $3, $4)
-            returning id, project_id, score
-            """,
-            voter_id,
-            body.project_id,
-            session_id,
-            body.score,
-        )
-    except asyncpg.UniqueViolationError:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="already voted for this project")
-
-    return VoteOut(id=row["id"], project_id=row["project_id"], score=row["score"])
-
-
-@router.get("/sessions/{session_id}/my-votes", response_model=list[MyVoteOut])
-async def my_votes(
-    session_id: UUID,
-    voter_id: UUID = Depends(get_current_member_id),
-    pool: asyncpg.Pool = Depends(get_pool),
-):
-    rows = await pool.fetch(
-        "select project_id, score from votes where session_id = $1 and voter_id = $2",
-        session_id,
-        voter_id,
-    )
-    return [MyVoteOut(project_id=row["project_id"], score=row["score"]) for row in rows]

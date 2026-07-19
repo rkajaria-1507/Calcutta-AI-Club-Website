@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.db import connect_db, disconnect_db
-from app.routers import health, identity, members, projects, reactions, session_posts, sessions
+from app.routers import corpus, dreams, health, members, pitches, sessions
 
 
 @asynccontextmanager
@@ -15,7 +15,7 @@ async def lifespan(app: FastAPI):
     await disconnect_db()
 
 
-app = FastAPI(title="ClubOS API", lifespan=lifespan)
+app = FastAPI(title="Calcutta AI Club API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -25,9 +25,8 @@ app.add_middleware(
 )
 
 app.include_router(health.router)
-app.include_router(identity.router)
 app.include_router(members.router)
-app.include_router(projects.router)
+app.include_router(corpus.router)
+app.include_router(pitches.router)
+app.include_router(dreams.router)
 app.include_router(sessions.router)
-app.include_router(session_posts.router)
-app.include_router(reactions.router)

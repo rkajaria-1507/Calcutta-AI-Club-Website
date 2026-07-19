@@ -267,13 +267,3 @@ load). Return a static body.
 | GET | /sessions/{id}/checkins | public | ⭐ polled live wall |
 | GET | /health | public | keep-warm |
 
----
-
-## Related: the RSVP / invite feature
-
-A parallel feature — the Partiful-style **session invite page** (RSVP + `+1`s, session hype
-reactions, and a hype wall) — is documented separately in [`RSVP_API.md`](RSVP_API.md), with
-its schema in [`RSVP_SCHEMA.md`](RSVP_SCHEMA.md) and build notes in
-[`RSVP_IMPLEMENTATION.md`](RSVP_IMPLEMENTATION.md). It currently sits on the earlier ClubOS
-session/RSVP model; reconciling it with the member/pitch model above is `ROADMAP.md` Phase 1.
-Its frontend lives at `web/app/sessions/[id]/invite/page.tsx`.

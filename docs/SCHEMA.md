@@ -309,12 +309,3 @@ Room Tonight), an un-RLS'd database is world-readable *and writable*. If you go 
 `alter table <t> enable row level security;` on every table **first**, then write policies.
 See `ARCHITECTURE.md §5.2`.
 
----
-
-## Related: the RSVP / invite feature schema
-
-The Partiful-style invite feature adds its own tables and columns
-(`session_posts`, `session_reactions`, `sessions.cover_image_url`, `sessions.host_blurb`,
-`rsvps.plus_ones`) on the earlier ClubOS session/RSVP model. That DDL lives in
-[`RSVP_SCHEMA.md`](RSVP_SCHEMA.md). It is **not yet unified** with the member/pitch model
-above — merging the two schemas is `ROADMAP.md` Phase 1 work.

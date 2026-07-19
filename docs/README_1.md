@@ -54,11 +54,10 @@ Postgres or the Anthropic API — the model key never reaches the browser.
 | `ARCHITECTURE.md` | Backend architecture, the AI edge, auth, the events spine, the API summary |
 | `API.md` | Every endpoint with request/response shapes and error cases |
 | `SCHEMA.md` | Tables, the append-only log, constraints, indexes, paste-ready SQL |
-| `RSVP_API.md` · `RSVP_SCHEMA.md` · `RSVP_IMPLEMENTATION.md` | The Partiful-style session **invite / RSVP** feature (a parallel surface on the earlier session model; reconciled in `ROADMAP.md` Phase 1) |
 
 ## Quickstart
 
-The frontend runs today with no backend and no key (AI degrades to deterministic fallbacks):
+**Frontend** — runs standalone; AI degrades to deterministic fallbacks with no key set:
 
 ```
 cd web
@@ -67,4 +66,13 @@ cp .env.example .env.local     # optional: set ANTHROPIC_API_KEY for real AI
 npm run dev                     # http://localhost:3000
 ```
 
-Standing up persistence (Postgres + FastAPI) and real auth is `ROADMAP.md` phases 1–2.
+**Backend** — implements the schema/API above against Supabase; not yet wired to the frontend
+(the frontend still runs in-memory — see `ROADMAP.md` for the remaining wiring step):
+
+```
+cd api
+python -m venv .venv
+./.venv/Scripts/pip install -r requirements.txt
+cp .env.example .env            # DATABASE_URL, JWT_SECRET, ADMIN_SECRET, CORS_ORIGINS
+./.venv/Scripts/uvicorn app.main:app --reload   # http://localhost:8000/docs
+```

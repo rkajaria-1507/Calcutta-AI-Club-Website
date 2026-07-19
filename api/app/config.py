@@ -6,6 +6,8 @@ class Settings(BaseSettings):
     jwt_secret: str
     admin_secret: str
     cors_origins: str = "http://localhost:3000"
+    anthropic_api_key: str | None = None
+    anthropic_model: str = "claude-sonnet-4-6"
 
     @property
     def cors_origin_list(self) -> list[str]:

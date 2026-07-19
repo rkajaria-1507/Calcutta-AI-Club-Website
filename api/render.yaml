@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: clubos-api
+    name: calcutta-ai-club-api
     runtime: python
     rootDir: api
     buildCommand: pip install -r requirements.txt
@@ -13,4 +13,8 @@ services:
       - key: ADMIN_SECRET
         sync: false
       - key: CORS_ORIGINS
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ANTHROPIC_MODEL
         sync: false
