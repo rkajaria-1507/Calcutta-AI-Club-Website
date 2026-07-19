@@ -105,9 +105,11 @@ Full project + owner + reaction counts.
 ## Sessions
 
 ### POST /sessions  — admin
+`cover_image_url` and `host_blurb` (both optional) drive the Partiful-style invite page.
 ```json
 // request
-{ "title": "August Demo Day", "topic": "Agents", "venue": "…", "starts_at": "2026-08-15T18:00:00+05:30" }
+{ "title": "August Demo Day", "topic": "Agents", "venue": "…", "starts_at": "2026-08-15T18:00:00+05:30",
+  "cover_image_url": "https://…", "host_blurb": "Bring your demos. We bring the chai." }
 // 201 -> session (voting_open defaults false)
 ```
 
@@ -115,7 +117,8 @@ Full project + owner + reaction counts.
 Upcoming first.
 ```json
 // 200
-[ { "id": "…", "title": "…", "topic": "…", "venue": "…", "starts_at": "…", "voting_open": false } ]
+[ { "id": "…", "title": "…", "topic": "…", "venue": "…", "starts_at": "…", "voting_open": false,
+    "cover_image_url": null, "host_blurb": null } ]
 ```
 
 ### GET /sessions/{id}  — public
@@ -148,18 +151,20 @@ Ranked projects for the projector. See `SCHEMA.md` for the query.
 ## RSVP
 
 ### PUT /sessions/{id}/rsvp  — member
-Idempotent upsert (PUT = safe to re-send). Member from token.
+Idempotent upsert (PUT = safe to re-send). Member from token. `plus_ones` (0–3,
+default 0) is how many guests you're bringing — only meaningful for `going`.
 ```json
 // request
-{ "status": "going" }   // going | maybe | no
-// 200 -> { "session_id": "…", "member_id": "…", "status": "going" }
+{ "status": "going", "plus_ones": 2 }   // status: going | maybe | no
+// 200 -> { "session_id": "…", "member_id": "…", "status": "going", "plus_ones": 2 }
 ```
 
 ### GET /sessions/{id}/rsvps  — public
-For the avatar row. Grouped by status.
+For the avatar row / face wall. Grouped by status. Going count for display =
+`going.length + sum(plus_ones)`.
 ```json
 // 200
-{ "going":  [ { "id": "…", "name": "…", "avatar_url": null } ],
+{ "going":  [ { "id": "…", "name": "…", "avatar_url": null, "plus_ones": 2 } ],
   "maybe":  [ … ],
   "no":     [ … ] }
 ```
@@ -203,6 +208,49 @@ So the UI can render which projects you've already voted on.
 
 ---
 
+## Session hype (invite page)
+
+### GET /sessions/{id}/reactions  — public (member-aware)
+Aggregate emoji counts on the event. If a valid `Authorization: Bearer` header is
+sent, `mine` lists the caller's own emojis (so pills render as toggled); anonymous
+callers just get empty `mine`.
+```json
+// 200
+{ "counts": { "🔥": 12, "🚀": 4 }, "mine": ["🔥"] }
+```
+
+### POST /sessions/{id}/react  — member
+```json
+{ "emoji": "🔥" }   // 201; 409 if you already used that emoji on this session
+```
+
+### DELETE /sessions/{id}/react  — member
+```json
+{ "emoji": "🔥" }   // 204
+```
+
+---
+
+## Session posts (hype wall)
+
+### POST /sessions/{id}/posts  — member
+```json
+// request
+{ "body": "can't wait for demo day 🔥" }   // 1–280 chars
+// 201
+{ "id": "…", "session_id": "…", "body": "…",
+  "author": { "id": "…", "name": "…", "avatar_url": null }, "created_at": "…" }
+```
+
+### GET /sessions/{id}/posts  — public
+Newest first, with author summary.
+
+### DELETE /sessions/{id}/posts/{post_id}  — author **or** admin
+Author is matched from the bearer token; admin via `X-Admin-Secret`. `403` if
+neither. `204` on success.
+
+---
+
 ## Health
 
 ### GET /health  — public
@@ -239,4 +287,10 @@ keep-warm ping generates load); return a static `{"status":"ok"}`.
 | GET | /sessions/{id}/my-votes | member | my voted projects |
 | POST | /projects/{id}/react | member | add reaction (optional) |
 | DELETE | /projects/{id}/react | member | remove reaction (optional) |
+| GET | /sessions/{id}/reactions | public | hype counts (+ own emojis if token sent) |
+| POST | /sessions/{id}/react | member | add hype emoji to session |
+| DELETE | /sessions/{id}/react | member | remove hype emoji from session |
+| POST | /sessions/{id}/posts | member | post on the hype wall |
+| GET | /sessions/{id}/posts | public | hype wall feed |
+| DELETE | /sessions/{id}/posts/{post_id} | author/admin | delete a post |
 | GET | /health | public | keep-warm / warm-up |

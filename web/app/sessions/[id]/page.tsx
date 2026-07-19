@@ -60,6 +60,10 @@ export default function SessionDetailPage() {
         {new Date(session.starts_at).toLocaleString()} {session.venue && `· ${session.venue}`}
       </p>
 
+      <p>
+        <Link href={`/sessions/${sessionId}/invite`}>Open the invite page →</Link>
+      </p>
+
       {session.voting_open && (
         <div className="section">
           <Link href={`/sessions/${sessionId}/board`}>
