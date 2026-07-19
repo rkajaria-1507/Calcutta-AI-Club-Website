@@ -62,13 +62,6 @@ const SANS = "system-ui, -apple-system, 'Segoe UI', sans-serif";
 
 /* ------------------------ seed corpus ------------------------ */
 
-// Room Tonight is still the scripted demo (real live check-ins are
-// ROADMAP.md Phase 7) — these names drive that animation only.
-const SEED_CHECKINS = [
-  "Aritra Sen", "Meghna Dutta", "Kabir Ghosh", "Anwesha Roy",
-  "Saurav Mandal", "Riya Bhattacharya", "Ishita Bose", "Dev Kapoor",
-];
-
 /* ------------------- split-flap primitives ------------------- */
 
 const FLAP_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .·";
@@ -904,22 +897,11 @@ function PitchBoard({ members, pitches, setPitches, currentUser, me }) {
 /* ------------------------- room tonight ---------------------- */
 
 function RoomTonight({ members }) {
-  const [checked, setChecked] = useState([]);
-  const queue = useRef([...SEED_CHECKINS]);
+  // Live check-ins (QR scan → this wall, polling GET /sessions/{id}/checkins)
+  // are ROADMAP.md Phase 7 — deliberately not built yet, so this reads
+  // honestly empty rather than replaying scripted fake names.
+  const [checked] = useState([]);
   const reduced = useReducedMotion();
-
-  useEffect(() => {
-    if (reduced) {
-      setChecked(SEED_CHECKINS.map((n) => ({ name: n, t: n })));
-      return;
-    }
-    const iv = setInterval(() => {
-      if (queue.current.length === 0) { clearInterval(iv); return; }
-      const name = queue.current.shift();
-      setChecked((c) => [{ name, t: name }, ...c]);
-    }, 2600);
-    return () => clearInterval(iv);
-  }, [reduced]);
 
   const byName = Object.fromEntries(members.map((m) => [m.name, m]));
 
