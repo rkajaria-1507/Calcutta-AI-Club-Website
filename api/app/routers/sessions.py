@@ -24,6 +24,9 @@ from app.schemas import (
 router = APIRouter(tags=["sessions"])
 
 
+SESSION_COLUMNS = "id, title, topic, venue, starts_at, voting_open, cover_image_url, host_blurb"
+
+
 def _row_to_session(row: asyncpg.Record) -> SessionOut:
     return SessionOut(
         id=row["id"],
@@ -32,6 +35,8 @@ def _row_to_session(row: asyncpg.Record) -> SessionOut:
         venue=row["venue"],
         starts_at=row["starts_at"],
         voting_open=row["voting_open"],
+        cover_image_url=row["cover_image_url"],
+        host_blurb=row["host_blurb"],
     )
 
 
@@ -50,15 +55,17 @@ async def _get_session_or_404(pool: asyncpg.Pool, session_id: UUID) -> asyncpg.R
 )
 async def create_session(body: SessionCreate, pool: asyncpg.Pool = Depends(get_pool)):
     row = await pool.fetchrow(
-        """
-        insert into sessions (title, topic, venue, starts_at)
-        values ($1, $2, $3, $4)
-        returning id, title, topic, venue, starts_at, voting_open
+        f"""
+        insert into sessions (title, topic, venue, starts_at, cover_image_url, host_blurb)
+        values ($1, $2, $3, $4, $5, $6)
+        returning {SESSION_COLUMNS}
         """,
         body.title,
         body.topic,
         body.venue,
         body.starts_at,
+        body.cover_image_url,
+        body.host_blurb,
     )
     return _row_to_session(row)
 
@@ -66,7 +73,7 @@ async def create_session(body: SessionCreate, pool: asyncpg.Pool = Depends(get_p
 @router.get("/sessions", response_model=list[SessionOut])
 async def list_sessions(pool: asyncpg.Pool = Depends(get_pool)):
     rows = await pool.fetch(
-        "select id, title, topic, venue, starts_at, voting_open from sessions order by starts_at asc"
+        f"select {SESSION_COLUMNS} from sessions order by starts_at asc"
     )
     return [_row_to_session(row) for row in rows]
 
@@ -122,7 +129,7 @@ async def update_session(session_id: UUID, body: SessionUpdate, pool: asyncpg.Po
             *values,
         )
     row = await pool.fetchrow(
-        "select id, title, topic, venue, starts_at, voting_open from sessions where id = $1",
+        f"select {SESSION_COLUMNS} from sessions where id = $1",
         session_id,
     )
     return _row_to_session(row)
@@ -170,16 +177,23 @@ async def upsert_rsvp(
     await _get_session_or_404(pool, session_id)
     row = await pool.fetchrow(
         """
-        insert into rsvps (member_id, session_id, status)
-        values ($1, $2, $3)
-        on conflict (member_id, session_id) do update set status = excluded.status
-        returning member_id, session_id, status
+        insert into rsvps (member_id, session_id, status, plus_ones)
+        values ($1, $2, $3, $4)
+        on conflict (member_id, session_id)
+            do update set status = excluded.status, plus_ones = excluded.plus_ones
+        returning member_id, session_id, status, coalesce(plus_ones, 0) as plus_ones
         """,
         member_id,
         session_id,
         body.status,
+        body.plus_ones,
     )
-    return RsvpOut(session_id=row["session_id"], member_id=row["member_id"], status=row["status"])
+    return RsvpOut(
+        session_id=row["session_id"],
+        member_id=row["member_id"],
+        status=row["status"],
+        plus_ones=row["plus_ones"],
+    )
 
 
 @router.get("/sessions/{session_id}/rsvps", response_model=RsvpsGrouped)
@@ -187,7 +201,7 @@ async def list_rsvps(session_id: UUID, pool: asyncpg.Pool = Depends(get_pool)):
     await _get_session_or_404(pool, session_id)
     rows = await pool.fetch(
         """
-        select r.status, m.id, m.name, m.avatar_url
+        select r.status, coalesce(r.plus_ones, 0) as plus_ones, m.id, m.name, m.avatar_url
         from rsvps r
         join members m on m.id = r.member_id
         where r.session_id = $1
@@ -198,7 +212,12 @@ async def list_rsvps(session_id: UUID, pool: asyncpg.Pool = Depends(get_pool)):
     grouped: dict[str, list[RsvpAvatar]] = {"going": [], "maybe": [], "no": []}
     for row in rows:
         grouped[row["status"]].append(
-            RsvpAvatar(id=row["id"], name=row["name"], avatar_url=row["avatar_url"])
+            RsvpAvatar(
+                id=row["id"],
+                name=row["name"],
+                avatar_url=row["avatar_url"],
+                plus_ones=row["plus_ones"],
+            )
         )
     return RsvpsGrouped(**grouped)
 

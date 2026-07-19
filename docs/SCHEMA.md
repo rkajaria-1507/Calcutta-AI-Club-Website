@@ -40,6 +40,8 @@ A club meetup. `voting_open` is the admin toggle for the scoreboard.
 | venue | text NULL | |
 | starts_at | timestamptz NOT NULL | |
 | voting_open | boolean NOT NULL | default `false` |
+| cover_image_url | text NULL | invite-page hero image (paste-a-link) |
+| host_blurb | text NULL | short host message on the invite page |
 | created_at | timestamptz NOT NULL | `now()` |
 
 ### projects
@@ -67,6 +69,7 @@ Member × session. One RSVP per person per session (upsert on change).
 | member_id | uuid NOT NULL | FK → members(id) ON DELETE CASCADE |
 | session_id | uuid NOT NULL | FK → sessions(id) ON DELETE CASCADE |
 | status | text NOT NULL | CHECK in ('going','maybe','no') |
+| plus_ones | smallint NULL | default 0, CHECK between 0 and 3 — "+N" guests |
 | created_at | timestamptz NOT NULL | `now()` |
 | — | UNIQUE (member_id, session_id) | one per person per session |
 
@@ -88,6 +91,29 @@ Voter × project. **The critical constraint: one vote per voter per project.**
 > **Self-vote rule** (`voter_id != owner_id`) can't be a simple CHECK across tables.
 > Enforce it in the app layer (the vote endpoint queries the project owner). A trigger is
 > provided below as belt-and-suspenders if you have spare minutes.
+
+### session_posts *(Partiful-style hype wall)*
+Short public comments on a session's invite page. Author or admin can delete.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | uuid PK | |
+| session_id | uuid NOT NULL | FK → sessions(id) ON DELETE CASCADE |
+| member_id | uuid NOT NULL | FK → members(id) ON DELETE CASCADE |
+| body | text NOT NULL | CHECK char_length(body) <= 280 |
+| created_at | timestamptz NOT NULL | `now()` |
+
+### session_reactions *(Partiful-style "hype" on the event itself)*
+One of each emoji per person per session. Mirrors `reactions` (which is per-project).
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | uuid PK | |
+| member_id | uuid NOT NULL | FK → members(id) ON DELETE CASCADE |
+| session_id | uuid NOT NULL | FK → sessions(id) ON DELETE CASCADE |
+| emoji | text NOT NULL | |
+| created_at | timestamptz NOT NULL | `now()` |
+| — | UNIQUE (member_id, session_id, emoji) | |
 
 ### reactions *(optional — add only if time allows)*
 One of each emoji per person per project.
@@ -210,6 +236,42 @@ $$ language plpgsql;
 create trigger trg_prevent_self_vote
   before insert on votes
   for each row execute function prevent_self_vote();
+```
+
+---
+
+## DDL — Partiful-style RSVP additions (run after the base DDL above)
+
+```sql
+-- Invite page content on sessions
+alter table sessions add column cover_image_url text;
+alter table sessions add column host_blurb text;
+
+-- +1s on RSVPs
+alter table rsvps add column plus_ones smallint default 0
+  check (plus_ones between 0 and 3);
+
+-- Hype wall (public comments on a session)
+create table session_posts (
+  id         uuid primary key default gen_random_uuid(),
+  session_id uuid not null references sessions(id) on delete cascade,
+  member_id  uuid not null references members(id) on delete cascade,
+  body       text not null check (char_length(body) <= 280),
+  created_at timestamptz not null default now()
+);
+
+-- Emoji hype on the event itself (mirrors per-project reactions)
+create table session_reactions (
+  id         uuid primary key default gen_random_uuid(),
+  member_id  uuid not null references members(id) on delete cascade,
+  session_id uuid not null references sessions(id) on delete cascade,
+  emoji      text not null,
+  created_at timestamptz not null default now(),
+  unique (member_id, session_id, emoji)
+);
+
+create index idx_session_posts_session     on session_posts(session_id, created_at desc);
+create index idx_session_reactions_session on session_reactions(session_id);
 ```
 
 ---

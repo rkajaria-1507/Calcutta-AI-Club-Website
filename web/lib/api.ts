@@ -84,6 +84,8 @@ export type Session = {
   venue: string | null;
   starts_at: string;
   voting_open: boolean;
+  cover_image_url: string | null;
+  host_blurb: string | null;
 };
 
 export type SessionDetail = {
@@ -103,7 +105,27 @@ export type LeaderboardEntry = {
   rank: number;
 };
 
-export type RsvpAvatar = { id: string; name: string; avatar_url: string | null };
+export type RsvpAvatar = { id: string; name: string; avatar_url: string | null; plus_ones: number };
 export type RsvpsGrouped = { going: RsvpAvatar[]; maybe: RsvpAvatar[]; no: RsvpAvatar[] };
 
+export type RsvpOut = {
+  session_id: string;
+  member_id: string;
+  status: "going" | "maybe" | "no";
+  plus_ones: number;
+};
+
 export type MyVoteOut = { project_id: string; score: number };
+
+export type SessionPost = {
+  id: string;
+  session_id: string;
+  body: string;
+  author: OwnerSummary;
+  created_at: string;
+};
+
+export type SessionReactions = {
+  counts: Record<string, number>;
+  mine: string[];
+};

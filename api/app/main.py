@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.db import connect_db, disconnect_db
-from app.routers import health, identity, members, projects, reactions, sessions
+from app.routers import health, identity, members, projects, reactions, session_posts, sessions
 
 
 @asynccontextmanager
@@ -29,4 +29,5 @@ app.include_router(identity.router)
 app.include_router(members.router)
 app.include_router(projects.router)
 app.include_router(sessions.router)
+app.include_router(session_posts.router)
 app.include_router(reactions.router)
