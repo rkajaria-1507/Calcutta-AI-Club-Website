@@ -54,6 +54,7 @@ Postgres or the Anthropic API — the model key never reaches the browser.
 | `ARCHITECTURE.md` | Backend architecture, the AI edge, auth, the events spine, the API summary |
 | `API.md` | Every endpoint with request/response shapes and error cases |
 | `SCHEMA.md` | Tables, the append-only log, constraints, indexes, paste-ready SQL |
+| `RSVP_API.md` · `RSVP_SCHEMA.md` · `RSVP_IMPLEMENTATION.md` | The Partiful-style session **invite / RSVP** feature (a parallel surface on the earlier session model; reconciled in `ROADMAP.md` Phase 1) |
 
 ## Quickstart
 

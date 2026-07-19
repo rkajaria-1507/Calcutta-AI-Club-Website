@@ -95,6 +95,8 @@ class SessionCreate(BaseModel):
     topic: str | None = None
     venue: str | None = None
     starts_at: datetime
+    cover_image_url: str | None = None
+    host_blurb: str | None = None
 
 
 class SessionUpdate(BaseModel):
@@ -103,6 +105,8 @@ class SessionUpdate(BaseModel):
     venue: str | None = None
     starts_at: datetime | None = None
     voting_open: bool | None = None
+    cover_image_url: str | None = None
+    host_blurb: str | None = None
 
 
 class SessionOut(BaseModel):
@@ -112,6 +116,8 @@ class SessionOut(BaseModel):
     venue: str | None
     starts_at: datetime
     voting_open: bool
+    cover_image_url: str | None
+    host_blurb: str | None
 
 
 class SessionDetail(BaseModel):
@@ -135,18 +141,21 @@ class LeaderboardEntry(BaseModel):
 
 class RsvpRequest(BaseModel):
     status: str = Field(pattern="^(going|maybe|no)$")
+    plus_ones: int = Field(default=0, ge=0, le=3)
 
 
 class RsvpOut(BaseModel):
     session_id: UUID
     member_id: UUID
     status: str
+    plus_ones: int
 
 
 class RsvpAvatar(BaseModel):
     id: UUID
     name: str
     avatar_url: str | None
+    plus_ones: int = 0
 
 
 class RsvpsGrouped(BaseModel):
@@ -177,3 +186,22 @@ class MyVoteOut(BaseModel):
 
 class ReactionRequest(BaseModel):
     emoji: str = Field(min_length=1, max_length=8)
+
+
+class SessionReactionsOut(BaseModel):
+    counts: dict[str, int]
+    mine: list[str]
+
+
+# ---------- Session posts (hype wall) ----------
+
+class SessionPostCreate(BaseModel):
+    body: str = Field(min_length=1, max_length=280)
+
+
+class SessionPostOut(BaseModel):
+    id: UUID
+    session_id: UUID
+    body: str
+    author: OwnerSummary
+    created_at: datetime
