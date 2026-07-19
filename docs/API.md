@@ -1,13 +1,20 @@
-# API — ClubOS
+# API — Calcutta AI Club
 
-Base URL: `NEXT_PUBLIC_API_URL` (e.g. `https://clubos-api.onrender.com`)
-All bodies are JSON. All timestamps are ISO 8601 (`timestamptz`).
+Detailed endpoint reference for the target backend (`ARCHITECTURE.md §8` has the summary).
+Base URL: `NEXT_PUBLIC_API_URL` (e.g. `https://cac-api.onrender.com`). All bodies are JSON;
+all timestamps are ISO 8601 (`timestamptz`).
+
+> **Today:** the frontend runs in-memory and reaches AI through Next.js route handlers
+> (`web/app/api/generate-profile`, `/match-pitch`, `/ask-corpus`). The endpoints below are the
+> FastAPI contract the frontend migrates onto in `ROADMAP.md` phases 1–3. The AI-backed
+> endpoints (`POST /members`, `POST /pitches`, `POST /corpus/ask`) mirror those route handlers
+> exactly, so the migration is a base-URL swap.
 
 ## Auth
 
-- **Member auth:** `Authorization: Bearer <jwt>` — JWT issued by `/join`, member id in `sub`.
+- **Member:** `Authorization: Bearer <jwt>` — JWT issued by `/auth/verify`, member id in `sub`.
   The member id is **always** taken from the token, never trusted from the request body.
-- **Admin auth:** `X-Admin-Secret: <ADMIN_SECRET>` header on admin endpoints.
+- **Admin:** `X-Admin-Secret: <ADMIN_SECRET>` header on admin endpoints.
 
 | Level | How |
 |-------|-----|
@@ -24,190 +31,212 @@ All bodies are JSON. All timestamps are ISO 8601 (`timestamptz`).
 | Status | When |
 |--------|------|
 | 400 | validation failed |
-| 401 | missing/invalid token |
-| 403 | not allowed (voting closed, self-vote, not owner, bad admin secret) |
+| 401 | missing/invalid token or code |
+| 403 | not allowed (not the owner, bad admin secret) |
 | 404 | resource not found |
-| 409 | conflict (already voted) |
+| 409 | conflict (already checked in) |
+
+Every mutating endpoint below also appends one row to `events` in the same transaction
+(`SCHEMA.md`). That side effect is implied and not repeated per endpoint.
 
 ---
 
-## Identity
+## Auth
 
-### POST /join  — public
-Create a member and return a token. This is the QR-landing action.
+### POST /auth/request — public
+Start magic-link/OTP sign-in. Stores only the code's hash; never returns the code in prod.
 ```json
 // request
-{ "name": "Raghav", "tagline": "backend + agents", "avatar_url": null }
-// 201
-{ "token": "eyJ...", "member": { "id": "…", "name": "Raghav", "tagline": "backend + agents", "avatar_url": null, "building_now": null } }
-```
-
-### GET /me  — member
-```json
+{ "phone": "+919812345678" }
 // 200
-{ "id": "…", "name": "Raghav", "tagline": "…", "avatar_url": null, "building_now": "a RAG bot" }
+{ "sent": true }
 ```
 
-### PATCH /me  — member
-Update own profile, including the "currently building" status. Only provided fields change.
+### POST /auth/verify — public
+Redeem the code, get a token + the member (creating one if this phone is new).
 ```json
 // request
-{ "tagline": "backend + agents", "building_now": "a RAG bot for my dad's shop" }
+{ "phone": "+919812345678", "code": "042917" }
+// 200
+{ "token": "eyJ…", "member": { "id": "…", "name": "…", … } }
+```
+
+### GET /me — member
+```json
+// 200 -> the caller's full member record
+```
+
+### PATCH /me — member
+Edit your own record. Only provided fields change. Emits `member.edited` with the changed keys.
+```json
+// request (any subset)
+{ "line": "…", "dream": "Anthropic, on eval tooling", "ask": "…", "socials": { "github": "…" } }
 // 200 -> updated member
 ```
 
 ---
 
-## Members / Wall
+## Onboarding
 
-### GET /members  — public
+### POST /members — public  ⭐ the showstopper write
+The end of the guided intake. Takes the five answers + name + dream, calls Claude to generate
+the card server-side, persists the member, and returns it with a token (onboarding signs you
+in). Mirrors the prototype's `POST /api/generate-profile`. Emits `member.joined`.
+```json
+// request
+{
+  "name": "Ada Basu",
+  "built": "Right now a captioning bot; if skill weren't the limit, an agent that runs my whole newsroom.",
+  "taste": "Pather Panchali — restraint is the highest technology.",
+  "contrarian": "Evals are theatre; taste is the real benchmark.",
+  "offer": "I can teach prompt-debugging from first principles.",
+  "ask": "A designer who thinks in systems.",
+  "dream": "Anthropic, on interpretability for Indic models",
+  "socials": { "github": "adabasu" }
+}
+// 201
+{
+  "token": "eyJ…",
+  "member": {
+    "id": "…", "name": "Ada Basu",
+    "field": "AI journalism", "build_into": "Agentic newsrooms",
+    "line": "Builds captioning bots today, an autonomous newsroom in her head…",
+    "epithet": "Bets on taste over benchmarks",
+    "tags": ["#agents", "#media", "#indic-ml"],
+    "built": "…", "taste": "…", "contrarian": "…", "offer": "…", "ask": "…", "dream": "…",
+    "created_at": "…"
+  }
+}
+```
+If the AI call fails, the server returns a deterministic fallback card (still `201`) so
+onboarding never dead-ends.
+
+---
+
+## Directory
+
+### GET /members — public
 The wall. Newest first.
 ```json
 // 200
-[ { "id": "…", "name": "…", "avatar_url": null, "tagline": "…", "building_now": "…" } ]
+[ { "id": "…", "name": "…", "field": "…", "built": "…", "build_into": "…",
+    "taste": "…", "ask": "…", "offer": "…", "dream": "…",
+    "line": "…", "epithet": "…", "tags": ["#…"] } ]
 ```
 
-### GET /members/{id}  — public
-Profile + that member's projects.
+### GET /members/{id} — public
+One member's full record (adds their pitches).
 ```json
 // 200
-{ "member": { … }, "projects": [ { … } ] }
+{ "member": { … }, "pitches": [ { … } ] }
 ```
 
 ---
 
-## Projects
+## Corpus chatbot
 
-### POST /projects  — member
-Owner is taken from the token. `session_id` optional (set it to enter a demo day).
+### POST /corpus/ask — public
+Answer a natural-language question about the room over the full member corpus. Host-style,
+never invents members. Mirrors the prototype's `POST /api/ask-corpus`. Emits `corpus.asked`.
 ```json
 // request
-{ "title": "Saarthi", "tagline": "consent-first YONO co-pilot", "link": "https://…", "repo_url": "https://…", "image_url": "https://…", "session_id": null }
-// 201 -> project
-```
-
-### GET /projects  — public
-Ship-log / wall feed, newest first. Includes owner summary.
-```json
+{ "question": "who should I meet if I'm building agents?" }
 // 200
-[ { "id": "…", "title": "…", "tagline": "…", "link": "…", "image_url": "…",
-    "owner": { "id": "…", "name": "…", "avatar_url": null }, "created_at": "…" } ]
+{ "answer": "Talk to Dev Kapoor — his agents already run a channel with 80k subs — and Aritra Sen for the eval side." }
 ```
-
-### GET /projects/{id}  — public
-Full project + owner + reaction counts.
-
-### PATCH /projects/{id}  — member (owner only)
-403 if the caller isn't the owner.
+Falls back to a keyword scan over the same corpus if the model call fails.
 
 ---
 
-## Sessions
+## Pitch board
 
-### POST /sessions  — admin
+### GET /pitches — public
+Every pitch, newest first, with its AI match snapshot and comment count.
+```json
+// 200
+[ { "id": "…", "author": { "id": "…", "name": "Saurav Mandal" },
+    "title": "Adda, searchable", "idea": "…", "ask": "…",
+    "suggested": [ { "name": "Anwesha Roy", "reason": "Owns the tokenizer problem…" } ],
+    "comment_count": 3, "created_at": "…" } ]
+```
+
+### POST /pitches — member
+Three fields in; the match engine runs server-side and the resulting suggestions are stored
+as a snapshot. Author comes from the token. Mirrors `POST /api/match-pitch`. Emits
+`pitch.posted` + `pitch.matched`.
 ```json
 // request
-{ "title": "August Demo Day", "topic": "Agents", "venue": "…", "starts_at": "2026-08-15T18:00:00+05:30" }
-// 201 -> session (voting_open defaults false)
+{ "title": "Adda, searchable", "idea": "Record club sessions, diarise…", "ask": "Two builders for a weekend" }
+// 201 -> the created pitch, including "suggested"
 ```
 
-### GET /sessions  — public
-Upcoming first.
+### GET /pitches/{id}/comments — public
 ```json
 // 200
-[ { "id": "…", "title": "…", "topic": "…", "venue": "…", "starts_at": "…", "voting_open": false } ]
+[ { "id": "…", "author": { "id": "…", "name": "…" }, "body": "…", "created_at": "…" } ]
 ```
 
-### GET /sessions/{id}  — public
-Session + RSVP summary + demo projects.
-```json
-// 200
-{ "session": { … },
-  "rsvp_counts": { "going": 12, "maybe": 3, "no": 1 },
-  "projects": [ { … } ] }
-```
-
-### PATCH /sessions/{id}  — admin
-Toggle voting (the choreography switch) or edit details.
+### POST /pitches/{id}/comments — member
+Reply to a pitch. Author from token. Emits `comment.posted`.
 ```json
 // request
-{ "voting_open": true }
-// 200 -> session
-```
-
-### GET /sessions/{id}/leaderboard  — public  ⭐ polled every 2s
-Ranked projects for the projector. See `SCHEMA.md` for the query.
-```json
-// 200
-[ { "project_id": "…", "title": "…", "owner_name": "…", "owner_avatar": null,
-    "image_url": "…", "score": 34, "vote_count": 12, "rank": 1 } ]
+{ "body": "I can bring the tripod." }
+// 201 -> the created comment
 ```
 
 ---
 
-## RSVP
+## Dream collabs
 
-### PUT /sessions/{id}/rsvp  — member
-Idempotent upsert (PUT = safe to re-send). Member from token.
+### GET /dreams — public
+The sponsor-facing aggregation: dreams grouped, counted, with who holds each. Powers the
+Pitch Board's dream-collab strip and the future `/sponsors` page (`ROADMAP.md §5`).
+```json
+// 200
+[ { "dream": "Anthropic, on eval tooling that actually catches things",
+    "members": 2, "who": ["Aritra Sen", "…"] } ]
+```
+
+---
+
+## Room Tonight
+
+### GET /sessions — public
+Upcoming first. The homepage "next session" reads the soonest.
+```json
+// 200
+[ { "id": "…", "title": "…", "topic": "…", "venue": "Park Street", "starts_at": "…" } ]
+```
+
+### POST /sessions — admin
 ```json
 // request
-{ "status": "going" }   // going | maybe | no
-// 200 -> { "session_id": "…", "member_id": "…", "status": "going" }
+{ "title": "July Session", "topic": "Agents", "venue": "Park Street", "starts_at": "2026-07-25T16:00:00+05:30" }
+// 201 -> session
 ```
 
-### GET /sessions/{id}/rsvps  — public
-For the avatar row. Grouped by status.
+### POST /sessions/{id}/checkin — member
+Idempotent (one check-in per member per session; re-sending is a no-op). Emits `checkin`.
+```json
+// 201 -> { "session_id": "…", "member_id": "…", "created_at": "…" }
+// 409 if the member is already checked in (surface as a friendly "already here")
+```
+
+### GET /sessions/{id}/checkins — public  ⭐ polled every ~2s
+The live Room Tonight wall, newest first.
 ```json
 // 200
-{ "going":  [ { "id": "…", "name": "…", "avatar_url": null } ],
-  "maybe":  [ … ],
-  "no":     [ … ] }
+[ { "name": "Kabir Ghosh", "epithet": "Demos first, apologises never",
+    "ask": "an internship that isn't boring", "created_at": "…" } ]
 ```
 
 ---
 
-## Votes
+## Ops
 
-### POST /sessions/{id}/vote  — member  ⭐ the showstopper write
-Member (voter) from token. Enforcement order: voting open → not self-vote → not duplicate.
-```json
-// request
-{ "project_id": "…", "score": 5 }   // score optional, defaults 1
-// 201 -> { "id": "…", "project_id": "…", "score": 5 }
-```
-Errors:
-- `403` — voting closed for this session, **or** voting for your own project.
-- `409` — you already voted for this project (DB unique constraint).
-- `404` — project not in this session.
-
-### GET /sessions/{id}/my-votes  — member
-So the UI can render which projects you've already voted on.
-```json
-// 200
-[ { "project_id": "…", "score": 5 } ]
-```
-
----
-
-## Reactions  *(optional)*
-
-### POST /projects/{id}/react  — member
-```json
-{ "emoji": "🔥" }   // 201; 409 if you already used that emoji here
-```
-
-### DELETE /projects/{id}/react  — member
-```json
-{ "emoji": "🔥" }   // 204
-```
-
----
-
-## Health
-
-### GET /health  — public
-For the uptime pinger and pre-demo warm-up. Cheap — do **not** hit the DB here (or the
-keep-warm ping generates load); return a static `{"status":"ok"}`.
+### GET /health — public
+Keep-warm / pre-demo warm-up. Cheap — do **not** hit the DB (or the keep-warm ping generates
+load). Return a static body.
 ```json
 // 200
 { "status": "ok" }
@@ -219,24 +248,21 @@ keep-warm ping generates load); return a static `{"status":"ok"}`.
 
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
-| POST | /join | public | create member + token |
-| GET | /me | member | own profile |
-| PATCH | /me | member | edit profile / "building now" |
+| POST | /auth/request | public | send OTP / magic link |
+| POST | /auth/verify | public | redeem code → token + member |
+| GET | /me | member | own record |
+| PATCH | /me | member | edit own record |
+| POST | /members | public | ⭐ onboard: generate card + token |
 | GET | /members | public | the wall |
-| GET | /members/{id} | public | profile + projects |
-| POST | /projects | member | post a project |
-| GET | /projects | public | ship-log feed |
-| GET | /projects/{id} | public | project detail |
-| PATCH | /projects/{id} | owner | edit project |
-| POST | /sessions | admin | create session |
+| GET | /members/{id} | public | member + their pitches |
+| POST | /corpus/ask | public | corpus chatbot |
+| GET | /pitches | public | the pitch board |
+| POST | /pitches | member | post a pitch (+ AI match) |
+| GET | /pitches/{id}/comments | public | pitch thread |
+| POST | /pitches/{id}/comments | member | reply |
+| GET | /dreams | public | dream-collab aggregation |
 | GET | /sessions | public | list sessions |
-| GET | /sessions/{id} | public | session detail |
-| PATCH | /sessions/{id} | admin | toggle voting / edit |
-| GET | /sessions/{id}/leaderboard | public | ⭐ polled scoreboard |
-| PUT | /sessions/{id}/rsvp | member | upsert RSVP |
-| GET | /sessions/{id}/rsvps | public | avatar row |
-| POST | /sessions/{id}/vote | member | ⭐ cast vote |
-| GET | /sessions/{id}/my-votes | member | my voted projects |
-| POST | /projects/{id}/react | member | add reaction (optional) |
-| DELETE | /projects/{id}/react | member | remove reaction (optional) |
-| GET | /health | public | keep-warm / warm-up |
+| POST | /sessions | admin | create a session |
+| POST | /sessions/{id}/checkin | member | check in (idempotent) |
+| GET | /sessions/{id}/checkins | public | ⭐ polled live wall |
+| GET | /health | public | keep-warm |

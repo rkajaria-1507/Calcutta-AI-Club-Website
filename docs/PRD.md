@@ -1,90 +1,106 @@
-# PRD — ClubOS
+# PRD — Calcutta AI Club
 
 ## 1. Problem
 
-The Calcutta AI Club has no shared memory. Members build things nobody sees,
-session attendance is unpredictable, and demo days leave no trace. The club runs
-on WhatsApp for chat and nothing for *state*.
+The Calcutta AI Club has no shared memory. People build things nobody sees, and a room full
+of complementary talent stays illegible to itself — the person who needs a designer never
+learns the person two seats away *is* one. The club runs on WhatsApp for chat and nothing for
+*state*, *legibility*, or *serendipity*.
 
-We are not building a chat app or a social network. We are building the club's
-**collective memory and its hype engine**: a place that makes shipped work visible,
-makes attendance social, and makes demo days competitive and memorable.
+We are not building a chat app or a social network. We are building the club's **collective
+memory and its introduction engine**: software that reads a person, composes them into a
+member the room can understand at a glance, and makes the latent connections in the room
+explicit.
 
 ## 2. Success metric
 
-One question, from the brief:
+One question: **watch the software read a stranger and turn them into a legible member in
+under a minute — live, on stage.** The onboarding *is* the demo. If a judge can type five
+answers and watch the club write their card back to them, the thesis is proven in one gesture.
 
-> **Would we actually use it at the next session?**
-
-Concretely, we win if, during judging, the room pulls out their phones, joins via
-QR, and votes on the live scoreboard — turning the judges into users in real time.
-That single moment is the product demo *and* the proof.
-
-Secondary signals: the wall is populated (not empty), RSVPs show real avatars,
-the leaderboard updates live on the projector.
+Secondary signals: the wall is populated and reads like literature, not a spreadsheet; the
+corpus chatbot answers "who should I meet if I'm building agents?" with real names; a posted
+pitch comes back with the right two people attached.
 
 ## 3. Users
 
 | User | Needs |
 |------|-------|
-| **Member** (the room) | See what others built, show what they built, RSVP, vote on demo day |
-| **Organizer / admin** | Create a session, open/close voting, project the scoreboard |
-| **Visitor** (recruiting) | Read-only view of the wall as social proof |
+| **Member** (the room) | Be read and made legible; find who to talk to; post ideas and get matched; own and edit their own record |
+| **Newcomer** | Onboard in under a minute and instantly belong on the wall |
+| **Organizer / admin** | Create a session; run Room Tonight |
+| **Sponsor / scout** (later) | See the room's ambition — the dream-collab map — as social proof |
 
-## 4. Non-negotiables (v1 scope)
+## 4. The three surfaces
 
-The product is broken without these.
+The product is three views over one corpus.
 
-1. **Lightweight identity** — name + avatar + one tagline. Join in < 30 seconds via QR. No passwords.
-2. **Project post ("I built X")** — title, one-liner, link, optional image. The atomic unit of the wall.
-3. **Session as an entity** — date, topic, venue. RSVP and demo-day both attach to it.
-4. **RSVP** — one tap, three states (going / maybe / no), with a **visible avatar row** of who's coming. The count alone has no social gravity.
-5. **Votes** — voter × project, **one vote per person enforced in the database** (not just the UI). The room *will* try to spam-vote; catching that gracefully is a live-demo flex.
-6. **Admin voting toggle** — open/close voting per session, so the scoreboard reveal can be choreographed.
+1. **The Club** — the front page and the living directory. Each member is a "card": a
+   one-sentence lede, an earned epithet, a dossier (field / built / building / taste), a
+   needs↔offers pair, and filterable tags. Above it sits the **corpus chatbot** — ask the
+   room anything in natural language and get a host-style introduction, never invented names.
+2. **The Pitch Board** — post an idea in three fields; the club renders it as a slide and
+   suggests who should hear it first. Threaded, collapsed-by-default comments keep the board
+   a clean wall of slides. The **dream-collaborations** strip sits on top: who the room would
+   kill to build with — the club's ceiling, and the sponsorship seam.
+3. **Room Tonight** — a dark, projector-mode live check-in wall. Scan in; your name lands on
+   the board; the room reads itself filling up.
 
-## 5. Strong should-haves (high ROI, add if time allows)
+## 5. Onboarding — the five questions (non-negotiable)
 
-- **"Currently building" status** — one editable field on the profile ("rn building: a RAG bot for my dad's shop"). Makes the wall feel *alive* rather than archival. Highest ROI field in the app; near-non-negotiable.
-- **Reactions** — one emoji tap on a project. Cheapest possible engagement loop.
-- **Ship-log / feed view** — projects ordered by time. Not a new system; one query over existing tables. Natural homepage.
+Onboarding is a guided sequence: one question at a time, a progress bar, then a "the club is
+reading you" beat, then the reveal of the AI-written card. The questions are locked, each
+mapped to what it feeds:
 
-## 6. Deliberately excluded (do not get baited)
+1. **Trajectory** — *What are you building now, and what would you build if skill weren't the
+   constraint?* The present clause fills `built` and tags; the counterfactual is the
+   becoming-vector — the match key and the epithet's raw material.
+2. **Taste** — *Name one thing you'd defend forever — a film, album, object, place, or dish.
+   Why that one?* The taste axis; the "why" is what makes the card read as literature and is
+   the field no other directory captures.
+3. **Mind** — *What do you believe about AI that most of this room would push back on?* The
+   contrarian extractor; sharpens the chatbot's retrieval and hands strangers an instant
+   argument. Kept in the corpus, not always printed on the card.
+4. **Offer** — *What could you teach for an hour tomorrow with zero prep?* Competence, not
+   charity; the supply side of the introduction engine; doubles as session curriculum.
+5. **Need** — *What do you need right now that someone in this room could plausibly give
+   you?* Scoped so it's actionable; matched against everyone's answer to Q4 — the
+   introduction engine.
+
+Plus **dream collaboration**, **name**, and **socials** as fields, not questions. From these
+seven inputs, Claude generates the `line`, `epithet`, `field`, `build_into`, and `tags`. The
+member owns the result and can edit every field, anytime.
+
+## 6. Trust model — ownership, not a wiki
+
+A member can edit **only their own** record, pitches, and comments. Signing in reveals edit
+affordances on your own card (a purple border + an EDIT button) and nowhere else. Joining the
+wall signs you in automatically — a new member is by definition their own record's owner.
+
+## 7. What connects on sign-in (value order)
+
+Your own editable record → your pitches and comments stamped to you → your socials so people
+can reach you → **your three suggested people** (the introduction engine: your Q5 against
+everyone's Q4). That last one is why login is worth doing — it converts a directory into a
+reason to show up. See `ROADMAP.md §4`.
+
+## 8. Deliberately excluded (do not get baited)
 
 | Feature | Why it's out |
 |---------|--------------|
-| **Messaging** | The club already has WhatsApp. A dead in-app inbox makes the product feel abandoned. Use a `wa.me/<number>` deep link on profiles instead — connection feature, zero build. |
-| **Notifications** | Push/email infra is hours of invisible work. The projected live leaderboard *is* the notification during the demo. |
-| **Comments** | Moderation surface + ugly empty states + zero demo value. Reactions cover 90%. |
-| **General posting / status feed** | Empty social networks are morgues. Posting is constrained to exactly two shapes: a **project** or a **"building now"** status. Constraint keeps the wall dense with only ~20 users. |
-| **Image uploads** | `image_url` is a paste-a-link text field. Upload infra can wait. |
+| **Direct messaging** | The club already has WhatsApp; socials + `wa.me` deep links cover connection at zero build. |
+| **General status feed** | Empty social feeds are morgues. Posting is constrained to exactly two shapes — a **member record** and a **pitch**. |
+| **Vector DB / embeddings** | ~dozens of members fit in one prompt; a retrieval stack is premature until the corpus is hundreds+. |
+| **Image uploads** | Not needed for cards; if ever added, `image_url` is a pasted link, not upload infra. |
+| **Notifications** | Push/email infra is invisible hours; Room Tonight on the projector is the live signal. |
 
-**Razor:** any feature that needs a *new table* is out of v1.
+**Razor:** the corpus is the product. A feature that doesn't make the room more legible or
+more connected is out of v1.
 
-## 7. Core user flows
+## 9. Current state & what's next
 
-**Join (in the room)**
-QR → `/join` → type name → you're in (token stored client-side). One screen.
-
-**Post a project**
-Wall → "+ I built something" → title, one-liner, link → appears on wall + ship-log.
-
-**RSVP**
-Sessions → next session → tap "Going" → your avatar joins the row instantly.
-
-**Demo day (the showstopper)**
-1. Admin creates the session's projects (or teams self-add), opens voting.
-2. Room scans QR, votes 1–5 (or upvotes) on each project.
-3. Projector shows `/sessions/{id}/leaderboard`, polling every 2s — ranks animate live.
-4. Admin closes voting → winner reveal.
-
-## 8. Constraints
-
-- **Time:** ~3 hours, must deploy.
-- **Team:** 1 developer + 3 daily-AI-users (non-devs) on content, pitch, design.
-- **Demo assumes:** in-person, projector, audience phones. If any of that is missing, the live-vote showstopper degrades to a pre-seeded scoreboard walkthrough.
-
-## 9. Out of scope for the hackathon (roadmap slide)
-
-Streaks & badges · GitHub activity import · WhatsApp/email reminders · RSVP waitlists ·
-weighted judge voting · season-long points ladder · skill directory & teammate matching ·
-Supabase Realtime upgrade. Show these on one "what's next" slide — never build them today.
+The frontend is built and runnable (in-memory, AI server-side with graceful fallbacks). The
+work from here — persistence, real auth, consolidating AI into the backend, the introduction
+engine, the sponsor page, the outward collaboration board, live Room Tonight — is sequenced
+in `ROADMAP.md`. The backend contract is in `ARCHITECTURE.md` + `API.md`; the data model,
+including the append-only `events` spine that makes the club compound, is in `SCHEMA.md`.
