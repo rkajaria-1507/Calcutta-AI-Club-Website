@@ -87,3 +87,19 @@ export type ApiComment = {
 };
 
 export type ApiDream = { dream: string; members: number; who: string[] };
+
+export type ApiSession = {
+  id: string;
+  title: string;
+  topic: string | null;
+  venue: string | null;
+  starts_at: string;
+};
+
+export type ApiRsvpMember = { id: string; name: string; epithet: string | null };
+
+export type ApiRsvpsGrouped = {
+  going: ApiRsvpMember[];
+  maybe: ApiRsvpMember[];
+  no: ApiRsvpMember[];
+};

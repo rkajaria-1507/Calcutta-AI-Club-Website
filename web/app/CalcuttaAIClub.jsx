@@ -582,7 +582,106 @@ function CorpusBar({ members }) {
 
 /* ---------------------- front + directory -------------------- */
 
-function FrontPage({ members, pitchCount, onJoin, onUpdateLine, currentUser, onEditProfile }) {
+function formatSessionWhen(startsAt) {
+  const d = new Date(startsAt);
+  return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) +
+    " · " + d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+function SessionCard({ me }) {
+  const [session, setSession] = useState(undefined); // undefined = loading, null = none scheduled
+  const [rsvps, setRsvps] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = async () => {
+    const all = await api("/sessions");
+    const upcoming = all.filter((s) => new Date(s.starts_at) >= new Date());
+    const next = upcoming[0] || null;
+    setSession(next);
+    if (next) setRsvps(await api(`/sessions/${next.id}/rsvps`));
+  };
+
+  useEffect(() => {
+    load().catch(() => setSession(null));
+  }, []);
+
+  const myStatus = (() => {
+    if (!me || !rsvps) return null;
+    if (rsvps.going.some((m) => m.id === me.id)) return "going";
+    if (rsvps.maybe.some((m) => m.id === me.id)) return "maybe";
+    if (rsvps.no.some((m) => m.id === me.id)) return "no";
+    return null;
+  })();
+
+  const rsvp = async (status) => {
+    if (!me || !session || busy) return;
+    setBusy(true);
+    try {
+      await api(`/sessions/${session.id}/rsvp`, { method: "PUT", auth: true, body: { status } });
+      setRsvps(await api(`/sessions/${session.id}/rsvps`));
+    } catch {
+      // best-effort
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (session === undefined) {
+    return (
+      <div style={{ border: `1px solid ${C.ink}`, padding: "14px 20px", background: C.paperDeep }}>
+        <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.24em", color: C.inkSoft }}>NEXT SESSION</div>
+        <div style={{ fontFamily: SANS, fontWeight: 800, fontSize: 18, color: C.ink, marginTop: 4 }}>Loading…</div>
+      </div>
+    );
+  }
+
+  if (session === null) {
+    return (
+      <div style={{ border: `1px solid ${C.ink}`, padding: "14px 20px", background: C.paperDeep }}>
+        <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.24em", color: C.inkSoft }}>NEXT SESSION</div>
+        <div style={{ fontFamily: SANS, fontWeight: 800, fontSize: 18, color: C.ink, marginTop: 4 }}>None scheduled yet</div>
+      </div>
+    );
+  }
+
+  const rsvpBtn = (status, label) => (
+    <button
+      onClick={() => rsvp(status)}
+      disabled={busy || !me}
+      title={me ? "" : "Sign in to RSVP"}
+      style={{
+        fontFamily: MONO, fontSize: 10, letterSpacing: "0.12em", padding: "5px 11px",
+        background: myStatus === status ? C.indigo : "transparent",
+        color: myStatus === status ? C.paper : C.ink,
+        border: `1px solid ${myStatus === status ? C.indigo : C.line}`,
+        cursor: me ? "pointer" : "not-allowed", opacity: me ? 1 : 0.6,
+      }}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <div style={{ border: `1px solid ${C.ink}`, padding: "14px 20px", background: C.paperDeep }}>
+      <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.24em", color: C.inkSoft }}>NEXT SESSION</div>
+      <div style={{ fontFamily: SANS, fontWeight: 800, fontSize: 18, color: C.ink, marginTop: 4 }}>
+        {formatSessionWhen(session.starts_at)}{session.venue ? ` · ${session.venue}` : ""}
+      </div>
+      {rsvps && (
+        <div style={{ fontFamily: SERIF, fontStyle: "italic", fontSize: 13, color: C.inkSoft, marginTop: 6 }}>
+          {rsvps.going.length} going{rsvps.maybe.length ? ` · ${rsvps.maybe.length} maybe` : ""}
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+        {rsvpBtn("going", "I'M GOING")}
+        {rsvpBtn("maybe", "MAYBE")}
+        {rsvpBtn("no", "CAN'T MAKE IT")}
+      </div>
+    </div>
+  );
+}
+
+function FrontPage({ members, pitchCount, me, onJoin, onUpdateLine, currentUser, onEditProfile }) {
   const [activeTags, setActiveTags] = useState([]);
   const allTags = [...new Set(members.flatMap((m) => m.tags || []))].sort();
   const toggleTag = (t) =>
@@ -601,10 +700,7 @@ function FrontPage({ members, pitchCount, onJoin, onUpdateLine, currentUser, onE
       </div>
 
       <div style={{ display: "flex", gap: 14, margin: "26px 0 6px", flexWrap: "wrap" }}>
-        <div style={{ border: `1px solid ${C.ink}`, padding: "14px 20px", background: C.paperDeep }}>
-          <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.24em", color: C.inkSoft }}>NEXT SESSION</div>
-          <div style={{ fontFamily: SANS, fontWeight: 800, fontSize: 18, color: C.ink, marginTop: 4 }}>Sat 25 Jul · 4 PM · Park Street</div>
-        </div>
+        <SessionCard me={me} />
         <div style={{ border: `1px solid ${C.ink}`, padding: "14px 20px", background: C.ink }}>
           <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.24em", color: C.paperDeep }}>ON THE WALL</div>
           <div style={{ fontFamily: SANS, fontWeight: 800, fontSize: 18, color: C.paper, marginTop: 4 }}>{members.length} members · {pitchCount} open pitches</div>
@@ -1163,7 +1259,7 @@ export default function CalcuttaAIClub() {
       </div>
 
       <div style={{ maxWidth: 1080, margin: "0 auto", padding: "0 24px 80px" }}>
-        {tab === "club" && <FrontPage members={members} pitchCount={pitches.length} onJoin={() => setJoining(true)} onUpdateLine={updateLine} currentUser={currentUser} onEditProfile={() => setEditingProfile(true)} />}
+        {tab === "club" && <FrontPage members={members} pitchCount={pitches.length} me={me} onJoin={() => setJoining(true)} onUpdateLine={updateLine} currentUser={currentUser} onEditProfile={() => setEditingProfile(true)} />}
         {tab === "pitch" && <PitchBoard members={members} pitches={pitches} setPitches={setPitches} currentUser={currentUser} me={me} />}
         {tab === "room" && <RoomTonight members={members} />}
       </div>

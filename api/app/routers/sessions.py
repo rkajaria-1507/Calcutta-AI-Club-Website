@@ -6,7 +6,16 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from app.db import get_pool
 from app.deps import get_current_member_id, require_admin
 from app.events import log_event
-from app.schemas import CheckinEntry, CheckinOut, SessionCreate, SessionOut
+from app.schemas import (
+    CheckinEntry,
+    CheckinOut,
+    RsvpMember,
+    RsvpOut,
+    RsvpRequest,
+    RsvpsGrouped,
+    SessionCreate,
+    SessionOut,
+)
 
 router = APIRouter(tags=["sessions"])
 
@@ -87,3 +96,56 @@ async def list_checkins(session_id: UUID, pool: asyncpg.Pool = Depends(get_pool)
         CheckinEntry(name=row["name"], epithet=row["epithet"], ask=row["ask"], created_at=row["created_at"])
         for row in rows
     ]
+
+
+async def _get_session_or_404(pool: asyncpg.Pool, session_id: UUID) -> None:
+    exists = await pool.fetchval("select 1 from sessions where id = $1", session_id)
+    if exists is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session not found")
+
+
+@router.put("/sessions/{session_id}/rsvp", response_model=RsvpOut)
+async def upsert_rsvp(
+    session_id: UUID,
+    body: RsvpRequest,
+    member_id: UUID = Depends(get_current_member_id),
+    pool: asyncpg.Pool = Depends(get_pool),
+):
+    await _get_session_or_404(pool, session_id)
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                """
+                insert into rsvps (session_id, member_id, status)
+                values ($1, $2, $3)
+                on conflict (session_id, member_id) do update set status = excluded.status
+                returning session_id, member_id, status
+                """,
+                session_id,
+                member_id,
+                body.status,
+            )
+            await log_event(conn, member_id, "rsvp", {"session_id": str(session_id), "status": body.status})
+
+    return RsvpOut(session_id=row["session_id"], member_id=row["member_id"], status=row["status"])
+
+
+@router.get("/sessions/{session_id}/rsvps", response_model=RsvpsGrouped)
+async def list_rsvps(session_id: UUID, pool: asyncpg.Pool = Depends(get_pool)):
+    await _get_session_or_404(pool, session_id)
+
+    rows = await pool.fetch(
+        """
+        select r.status, m.id, m.name, m.epithet
+        from rsvps r
+        join members m on m.id = r.member_id
+        where r.session_id = $1
+        order by r.created_at asc
+        """,
+        session_id,
+    )
+    grouped = {"going": [], "maybe": [], "no": []}
+    for row in rows:
+        grouped[row["status"]].append(RsvpMember(id=row["id"], name=row["name"], epithet=row["epithet"]))
+    return RsvpsGrouped(**grouped)
