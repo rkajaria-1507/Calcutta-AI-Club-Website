@@ -16,7 +16,7 @@ Spec docs live in [`docs/`](docs/): [`PRD.md`](docs/PRD.md), [`ROADMAP.md`](docs
 | Frontend | Next.js (App Router) | Vercel   |
 | Backend  | FastAPI (Python)     | Render   |
 | Database | Postgres             | Supabase |
-| AI       | Anthropic Claude (`claude-sonnet-4-6`) | via the backend / Next server |
+| AI       | Anthropic Claude (`claude-sonnet-4-6`) | via the backend |
 
 The frontend talks **only** to the backend; the backend is the only thing that touches
 Postgres or the Anthropic API, so the model key never reaches the browser.
@@ -24,43 +24,45 @@ Postgres or the Anthropic API, so the model key never reaches the browser.
 ## Repo layout
 
 ```
-web/    Next.js frontend — the three surfaces + server-side AI route handlers
+web/    Next.js frontend — the three surfaces, fetching everything from the backend
 api/    FastAPI backend — implements the docs/API.md + SCHEMA.md contract against Supabase
 docs/   Spec docs (PRD, roadmap, architecture, API, schema)
 ```
 
 ## Current state
 
-The **frontend is built and runnable today**, deployed at the Vercel production URL. State is
-in-memory (a refresh resets it) and the three AI surfaces run through Next.js route handlers
-(`web/app/api/*`) that hold the Anthropic key server-side. With no key set, every AI call
-degrades to deterministic local logic — so it runs offline and a live demo never stalls.
+**Frontend and backend are both built and wired together**, verified end-to-end locally:
+onboarding persists a real member (survives a refresh), the directory/pitch board/corpus
+chatbot all read and write through the backend, comments and profile edits round-trip to
+Postgres, and every AI surface (card generation, pitch matching, corpus Q&A) runs server-side
+in `api/`, degrading to deterministic logic when `ANTHROPIC_API_KEY` is unset.
 
-The **backend + database are also built** — `api/` implements every endpoint in `docs/API.md`
-against the schema in `docs/SCHEMA.md` (members with the five-question intake, pitches +
-comments + AI matching, dream-collab aggregation, sessions/check-ins, and the append-only
-`events` log), verified end-to-end against the live Supabase project. It is **not yet wired to
-the frontend** — that swap (replace the `useState(SEED_*)` stores with fetches to
-`NEXT_PUBLIC_API_URL`) plus real auth are the remaining `docs/ROADMAP.md` phase-1/2 work.
+Room Tonight is still the scripted check-in demo — live check-ins are `docs/ROADMAP.md` Phase
+7, intentionally last. Real phone/OTP auth (currently: join once per browser, session restored
+from a stored token) is Phase 2.
+
+**Not yet deployed together**: the frontend is live on Vercel, but the FastAPI backend isn't
+deployed anywhere yet, so the production site still runs against whatever
+`NEXT_PUBLIC_API_URL` is set to in Vercel. Deploying `api/` (Render or similar) and pointing
+Vercel's env var at it is the remaining step to make the hosted demo fully live.
 
 ## Quickstart
 
-**Frontend** (no backend or key required):
-```
-cd web
-npm install
-cp .env.example .env.local     # optional: set ANTHROPIC_API_KEY for real AI generation
-npm run dev                     # http://localhost:3000
-```
-`ANTHROPIC_API_KEY` is read server-side only — never prefix it with `NEXT_PUBLIC_`.
-
-**Backend**:
+**Backend** (start this first — the frontend needs it):
 ```
 cd api
 python -m venv .venv
 ./.venv/bin/pip install -r requirements.txt
 cp .env.example .env           # DATABASE_URL, JWT_SECRET, ADMIN_SECRET, CORS_ORIGINS, ANTHROPIC_API_KEY (optional)
 ./.venv/bin/uvicorn app.main:app --reload   # http://localhost:8000/docs
+```
+
+**Frontend**:
+```
+cd web
+npm install
+cp .env.example .env.local     # NEXT_PUBLIC_API_URL=http://localhost:8000
+npm run dev                     # http://localhost:3000
 ```
 
 ## Deploy

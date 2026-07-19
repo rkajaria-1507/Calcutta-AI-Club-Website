@@ -1,6 +1,31 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import { api, getToken, setToken, ApiError } from "@/lib/api";
+
+/* Adapts the backend's field names (field/build_into/taste) to the ones
+   this component was originally written against (industry/buildInto/tasteInto). */
+function adaptMember(m) {
+  return {
+    ...m,
+    industry: m.field,
+    buildInto: m.build_into,
+    tasteInto: m.taste,
+  };
+}
+
+function adaptPitch(p) {
+  return {
+    id: p.id,
+    author: p.author.name,
+    authorId: p.author.id,
+    title: p.title,
+    idea: p.idea,
+    ask: p.ask,
+    suggested: p.suggested,
+    commentCount: p.comment_count,
+  };
+}
 
 /* ============================================================
    CALCUTTA AI CLUB — club software
@@ -37,42 +62,8 @@ const SANS = "system-ui, -apple-system, 'Segoe UI', sans-serif";
 
 /* ------------------------ seed corpus ------------------------ */
 
-const SEED_MEMBERS = [
-  { id: 1, name: "Aritra Sen", industry: "Fintech", built: "A UPI fraud-flagging model running at a Kolkata NBFC", tasteInto: "Satyajit Ray restorations, mechanical keyboards", buildInto: "Agentic payments, eval harnesses", epithet: "Ships quietly, argues loudly", ask: "First users for an eval tool", offer: "Can teach fine-tuning", line: "Runs fraud models by day, builds eval harnesses by night, restores Ray films in between.", dream: "Anthropic, on eval tooling that actually catches things", tags: ["#agents", "#evals", "#fintech", "#claude"] },
-  { id: 2, name: "Riya Bhattacharya", industry: "Healthcare", built: "Bengali speech-to-text for rural clinic intake", tasteInto: "Baul music, film photography", buildInto: "Low-resource language models", epithet: "The room's harshest voter", ask: "A cofounder who can sell", offer: "Clinical datasets, annotated", line: "Shipped Bengali speech-to-text into real clinics; now hunting a cofounder who can sell.", dream: "The govt health mission, to put this in every PHC", tags: ["#speech", "#indic-ml", "#healthcare"] },
-  { id: 3, name: "Kabir Ghosh", industry: "Student, Jadavpur", built: "A CV pipeline that counts trams for fun", tasteInto: "One Piece, street food cartography", buildInto: "Robotics, anything embodied", epithet: "Demos first, apologises never", ask: "An internship that isn't boring", offer: "Free labour for hard problems", line: "Counts trams with computer vision for fun; wants his hands on anything embodied.", dream: "Boston Dynamics, or anyone who'll let me break robots", tags: ["#robotics", "#vision", "#student"] },
-  { id: 4, name: "Meghna Dutta", industry: "Design", built: "Brand systems for two funded startups", tasteInto: "Letterpress, Nam June Paik", buildInto: "AI-native interfaces", epithet: "Thinks in grids, votes on taste", ask: "Engineers who respect kerning", offer: "Will make your demo look expensive", line: "Two funded brand systems behind her; now designing what AI-native software should feel like.", dream: "Figma or Linear, on what comes after the dashboard", tags: ["#design", "#interfaces", "#lovable"] },
-  { id: 5, name: "Saurav Mandal", industry: "Enterprise SaaS", built: "RAG over 40 years of legal archives", tasteInto: "Test cricket, Calcutta coffee houses", buildInto: "Retrieval, knowledge graphs", epithet: "Longest attendance streak alive", ask: "A designer for a dense product", offer: "War stories about production RAG", line: "Put forty years of legal archives behind a retrieval layer and lived to tell the war stories.", dream: "A frontier lab, to stress-test retrieval at real scale", tags: ["#rag", "#retrieval", "#enterprise", "#claude"] },
-  { id: 6, name: "Anwesha Roy", industry: "Research", built: "Published on tokenizer bias in Indic scripts", tasteInto: "Rabindrasangeet, zines", buildInto: "Interpretability, small models", epithet: "Thinks everyone is wrong, politely", ask: "Compute, honestly", offer: "Paper reviews within 48 hours", line: "Published on tokenizer bias in Indic scripts; will review your paper faster than your advisor.", dream: "EleutherAI, on open interpretability for Indic models", tags: ["#interpretability", "#indic-ml", "#research"] },
-  { id: 7, name: "Dev Kapoor", industry: "Creator economy", built: "A faceless YT channel run by agents, 80k subs", tasteInto: "Sneaker archives, ambient techno", buildInto: "Content pipelines, voice cloning", epithet: "Monetised before he demoed", ask: "Someone who understands ops", offer: "Distribution playbooks that work", line: "His agents run a faceless channel with 80k subs; he mostly watches the dashboard.", dream: "MrBeast's team, but for AI-native formats", tags: ["#agents", "#content", "#voice"] },
-  { id: 8, name: "Ishita Bose", industry: "Climate", built: "Flood-risk maps for the Sundarbans from satellite data", tasteInto: "Long walks in North Calcutta, archives", buildInto: "Geospatial ML", epithet: "Joined once, changed the agenda", ask: "A frontend hand for map UI", offer: "Satellite data pipelines", line: "Maps flood risk for the Sundarbans from orbit; needs someone to make it beautiful.", dream: "ISRO or the ESA, on climate models that ship to people", tags: ["#geospatial", "#climate", "#lovable"] },
-];
-
-const SEED_PITCHES = [
-  {
-    id: 1,
-    author: "Saurav Mandal",
-    title: "Adda, searchable",
-    idea: "Record club sessions, diarise speakers, make every past discussion queryable. The club's spoken history becomes its second brain. Nothing said in this room evaporates again.",
-    ask: "Two builders for a weekend sprint, one phone tripod",
-    suggested: [
-      { name: "Anwesha Roy", reason: "Owns the tokenizer problem your Bengali transcripts will hit" },
-      { name: "Riya Bhattacharya", reason: "Already shipped Bengali speech-to-text in production" },
-    ],
-  },
-  {
-    id: 2,
-    author: "Meghna Dutta",
-    title: "The Demo Day poster engine",
-    idea: "Every demo auto-generates a letterpress-styled poster: project, maker, verdict. Printed after each session, pasted on the venue wall. The club papers its own history onto the building.",
-    ask: "One engineer, access to a Risograph",
-    suggested: [
-      { name: "Dev Kapoor", reason: "His content pipeline is your poster pipeline with different output" },
-      { name: "Kabir Ghosh", reason: "Free labour for hard problems, and this one is fun" },
-    ],
-  },
-];
-
+// Room Tonight is still the scripted demo (real live check-ins are
+// ROADMAP.md Phase 7) — these names drive that animation only.
 const SEED_CHECKINS = [
   "Aritra Sen", "Meghna Dutta", "Kabir Ghosh", "Anwesha Roy",
   "Saurav Mandal", "Riya Bhattacharya", "Ishita Bose", "Dev Kapoor",
@@ -329,32 +320,13 @@ const ONBOARD_QUESTIONS = [
   },
 ];
 
-async function generateProfile(answers) {
-  try {
-    const res = await fetch("/api/generate-profile", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ answers }),
-    });
-    if (!res.ok) throw new Error("bad response");
-    return await res.json();
-  } catch (e) {
-    // Deterministic fallback so the demo never stalls
-    return {
-      line: `New on the wall: ${answers.built?.slice(0, 90) || "story still being written"}.`,
-      epithet: "Just walked in",
-      industry: "Undeclared",
-      buildInto: answers.built?.split(" ").slice(0, 4).join(" ") || "Undeclared",
-      tags: [],
-    };
-  }
-}
-
 function Onboarding({ onComplete, onClose }) {
   const [step, setStep] = useState(0);           // question index
   const [answers, setAnswers] = useState({});
   const [phase, setPhase] = useState("ask");     // ask | reading | reveal
   const [profile, setProfile] = useState(null);
+  const [authResult, setAuthResult] = useState(null);
+  const [error, setError] = useState(null);
   const [val, setVal] = useState("");
 
   const total = ONBOARD_QUESTIONS.length;
@@ -368,14 +340,32 @@ function Onboarding({ onComplete, onClose }) {
       setStep(step + 1);
     } else {
       setPhase("reading");
-      const p = await generateProfile(updated);
-      setProfile(p);
-      setPhase("reveal");
+      setError(null);
+      try {
+        const res = await api("/members", {
+          method: "POST",
+          body: {
+            name: updated.name,
+            built: updated.built || null,
+            taste: updated.tasteInto || null,
+            contrarian: updated.contrarian || null,
+            offer: updated.offer || null,
+            ask: updated.ask || null,
+            dream: updated.dream || null,
+          },
+        });
+        setAuthResult(res);
+        setProfile(adaptMember(res.member));
+        setPhase("reveal");
+      } catch (err) {
+        setError(err instanceof ApiError ? err.message : "Couldn't reach the club right now — try again.");
+        setPhase("ask");
+      }
     }
   };
 
   const finish = () => {
-    onComplete({ ...answers, ...profile });
+    onComplete(authResult);
     onClose();
   };
 
@@ -418,6 +408,11 @@ function Onboarding({ onComplete, onClose }) {
                 placeholder={cur.placeholder}
                 style={{ width: "100%", fontFamily: SERIF, fontSize: 17, lineHeight: 1.55, color: C.ink, background: C.paper, border: `1px solid ${C.line}`, padding: "14px 16px", resize: "vertical", minHeight: 120, outline: "none" }}
               />
+            )}
+            {error && (
+              <div style={{ fontFamily: SERIF, fontStyle: "italic", fontSize: 13, color: C.stamp, marginTop: 10 }}>
+                {error}
+              </div>
             )}
             <div style={{ display: "flex", gap: 10, marginTop: "auto", paddingTop: 24, alignItems: "center" }}>
               <button
@@ -493,16 +488,11 @@ function Onboarding({ onComplete, onClose }) {
 
 async function askCorpus(question, members) {
   try {
-    const res = await fetch("/api/ask-corpus", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question, members }),
-    });
-    if (!res.ok) throw new Error("bad response");
-    const data = await res.json();
-    return data.answer;
+    const res = await api("/corpus/ask", { method: "POST", body: { question }, auth: true });
+    return res.answer;
   } catch (e) {
-    // Transparent fallback: keyword scan over the same corpus
+    // The backend already degrades to a keyword fallback when unset — this
+    // only fires if the backend itself is unreachable.
     const q = question.toLowerCase();
     const hits = members.filter((m) =>
       [m.industry, m.built, m.buildInto, m.tasteInto, m.offer, ...(m.tags || [])]
@@ -599,7 +589,7 @@ function CorpusBar({ members }) {
 
 /* ---------------------- front + directory -------------------- */
 
-function FrontPage({ members, onJoin, onUpdateLine, currentUser, onEditProfile }) {
+function FrontPage({ members, pitchCount, onJoin, onUpdateLine, currentUser, onEditProfile }) {
   const [activeTags, setActiveTags] = useState([]);
   const allTags = [...new Set(members.flatMap((m) => m.tags || []))].sort();
   const toggleTag = (t) =>
@@ -624,7 +614,7 @@ function FrontPage({ members, onJoin, onUpdateLine, currentUser, onEditProfile }
         </div>
         <div style={{ border: `1px solid ${C.ink}`, padding: "14px 20px", background: C.ink }}>
           <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.24em", color: C.paperDeep }}>ON THE WALL</div>
-          <div style={{ fontFamily: SANS, fontWeight: 800, fontSize: 18, color: C.paper, marginTop: 4 }}>{members.length} members · 2 open pitches</div>
+          <div style={{ fontFamily: SANS, fontWeight: 800, fontSize: 18, color: C.paper, marginTop: 4 }}>{members.length} members · {pitchCount} open pitches</div>
         </div>
         <button onClick={onJoin} style={{ border: "none", padding: "14px 24px", background: C.indigo, color: C.paper, fontFamily: MONO, fontSize: 12, letterSpacing: "0.22em", cursor: "pointer" }}>
           JOIN THE WALL →
@@ -685,45 +675,43 @@ function FrontPage({ members, onJoin, onUpdateLine, currentUser, onEditProfile }
 
 /* ------------------------- pitch board ----------------------- */
 
-function suggestLocally(pitch, members) {
-  const text = (pitch.title + " " + pitch.idea + " " + pitch.ask).toLowerCase();
-  const scored = members.map((m) => {
-    const hay = (m.built + " " + m.buildInto + " " + m.offer + " " + m.industry).toLowerCase();
-    const words = hay.split(/[^a-z]+/).filter((w) => w.length > 4);
-    let score = 0;
-    words.forEach((w) => { if (text.includes(w)) score++; });
-    return { m, score };
-  }).sort((a, b) => b.score - a.score);
-  return scored.slice(0, 2).map(({ m }) => ({
-    name: m.name,
-    reason: `Offers: ${m.offer.toLowerCase()}`,
-  }));
-}
-
-async function suggestWithAI(pitch, members) {
-  try {
-    const res = await fetch("/api/match-pitch", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pitch, members }),
-    });
-    if (!res.ok) throw new Error("bad response");
-    const data = await res.json();
-    if (Array.isArray(data.suggested) && data.suggested.length) return data.suggested.slice(0, 3);
-    return suggestLocally(pitch, members);
-  } catch (e) {
-    return suggestLocally(pitch, members);
-  }
-}
-
-function PitchSlide({ p, me, onComment }) {
+function PitchSlide({ p, me }) {
   const [showComments, setShowComments] = useState(false);
+  const [comments, setComments] = useState(null);
+  const [count, setCount] = useState(p.commentCount);
   const [draft, setDraft] = useState("");
-  const comments = p.comments || [];
-  const submit = () => {
+  const [busy, setBusy] = useState(false);
+
+  const toggle = async () => {
+    const opening = !showComments;
+    setShowComments(opening);
+    if (opening && comments === null) {
+      try {
+        const rows = await api(`/pitches/${p.id}/comments`);
+        setComments(rows.map((c) => ({ id: c.id, author: c.author.name, text: c.body })));
+      } catch {
+        setComments([]);
+      }
+    }
+  };
+
+  const submit = async () => {
     if (!draft.trim() || !me) return;
-    onComment(p.id, { id: Date.now(), author: me.name, text: draft.trim() });
-    setDraft("");
+    setBusy(true);
+    try {
+      const c = await api(`/pitches/${p.id}/comments`, {
+        method: "POST",
+        auth: true,
+        body: { body: draft.trim() },
+      });
+      setComments([...(comments || []), { id: c.id, author: c.author.name, text: c.body }]);
+      setCount(count + 1);
+      setDraft("");
+    } catch {
+      // keep the draft so the member can retry
+    } finally {
+      setBusy(false);
+    }
   };
   return (
     <div style={{ border: `1px solid ${C.ink}`, background: C.paper, display: "flex", flexDirection: "column" }}>
@@ -755,21 +743,21 @@ function PitchSlide({ p, me, onComment }) {
       {/* Comments — collapsed by default, so the board stays a clean wall of slides */}
       <div style={{ padding: "12px 28px 16px" }}>
         <button
-          onClick={() => setShowComments(!showComments)}
+          onClick={toggle}
           style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.16em", color: C.inkSoft, background: "transparent", border: "none", cursor: "pointer", padding: 0 }}
         >
-          {comments.length ? `${comments.length} REPLY${comments.length > 1 ? "S" : ""}` : "DISCUSS"} {showComments ? "▾" : "▸"}
+          {count ? `${count} REPLY${count > 1 ? "S" : ""}` : "DISCUSS"} {showComments ? "▾" : "▸"}
         </button>
 
         {showComments && (
           <div style={{ marginTop: 12 }}>
-            {comments.map((c) => (
+            {(comments || []).map((c) => (
               <div key={c.id} style={{ marginBottom: 10, paddingLeft: 12, borderLeft: `2px solid ${C.line}` }}>
                 <span style={{ fontFamily: SANS, fontWeight: 700, fontSize: 12.5, color: C.ink }}>{c.author}</span>
                 <span style={{ fontFamily: SERIF, fontSize: 13.5, color: C.ink, lineHeight: 1.5, marginLeft: 8 }}>{c.text}</span>
               </div>
             ))}
-            {comments.length === 0 && (
+            {comments !== null && comments.length === 0 && (
               <div style={{ fontFamily: SERIF, fontStyle: "italic", fontSize: 13, color: C.inkSoft, marginBottom: 10 }}>
                 No replies yet. Start the thread.
               </div>
@@ -779,12 +767,12 @@ function PitchSlide({ p, me, onComment }) {
                 <input
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && submit()}
+                  onKeyDown={(e) => e.key === "Enter" && !busy && submit()}
                   placeholder={`Reply as ${me.name.split(" ")[0]}…`}
                   style={{ flex: 1, fontFamily: SERIF, fontSize: 14, color: C.ink, background: "transparent", border: "none", borderBottom: `1px solid ${C.line}`, padding: "6px 2px", outline: "none" }}
                 />
-                <button onClick={submit} style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.16em", padding: "0 14px", background: C.indigo, color: C.paper, border: "none", cursor: "pointer" }}>
-                  SEND
+                <button onClick={submit} disabled={busy} style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.16em", padding: "0 14px", background: C.indigo, color: C.paper, border: "none", cursor: "pointer" }}>
+                  {busy ? "…" : "SEND"}
                 </button>
               </div>
             ) : (
@@ -799,10 +787,11 @@ function PitchSlide({ p, me, onComment }) {
   );
 }
 
-function PitchBoard({ members, pitches, setPitches, currentUser, me, onComment }) {
+function PitchBoard({ members, pitches, setPitches, currentUser, me }) {
   const [open, setOpen] = useState(false);
   const [f, setF] = useState({ title: "", idea: "", ask: "" });
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const input = {
     width: "100%", padding: "12px 14px", fontFamily: SANS, fontSize: 14,
@@ -813,12 +802,21 @@ function PitchBoard({ members, pitches, setPitches, currentUser, me, onComment }
   const post = async () => {
     if (!f.title.trim() || !f.idea.trim() || !me) return;
     setBusy(true);
-    const draft = { ...f, author: me.name, authorId: me.id };
-    const suggested = await suggestWithAI(draft, members);
-    setPitches([{ id: Date.now(), ...draft, suggested }, ...pitches]);
-    setF({ title: "", idea: "", ask: "" });
-    setBusy(false);
-    setOpen(false);
+    setError(null);
+    try {
+      const created = await api("/pitches", {
+        method: "POST",
+        auth: true,
+        body: { title: f.title.trim(), idea: f.idea.trim(), ask: f.ask.trim() || null },
+      });
+      setPitches([adaptPitch(created), ...pitches]);
+      setF({ title: "", idea: "", ask: "" });
+      setOpen(false);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't post that — try again.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -869,7 +867,7 @@ function PitchBoard({ members, pitches, setPitches, currentUser, me, onComment }
         Ideas on the table
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))", gap: 18 }}>
-        {pitches.map((p) => <PitchSlide key={p.id} p={p} me={me} onComment={onComment} />)}
+        {pitches.map((p) => <PitchSlide key={p.id} p={p} me={me} />)}
       </div>
 
       {open && me && (
@@ -883,6 +881,11 @@ function PitchBoard({ members, pitches, setPitches, currentUser, me, onComment }
             <textarea style={{ ...input, minHeight: 90, resize: "vertical" }} value={f.idea} onChange={set("idea")} placeholder="Two or three sentences. The board makes it look good." />
             <div style={label}>The ask</div>
             <input style={input} value={f.ask} onChange={set("ask")} placeholder="What do you need from the room?" />
+            {error && (
+              <div style={{ fontFamily: SERIF, fontStyle: "italic", fontSize: 13, color: C.stamp, marginBottom: 10 }}>
+                {error}
+              </div>
+            )}
             <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
               <button onClick={post} disabled={busy} style={{ flex: 1, padding: "13px 0", background: busy ? C.inkSoft : C.indigo, color: "#fff", border: "none", fontFamily: MONO, fontSize: 12, letterSpacing: "0.2em", cursor: "pointer" }}>
                 {busy ? "MATCHING THE ROOM..." : "POST TO THE BOARD"}
@@ -977,37 +980,23 @@ function RoomTonight({ members }) {
 
 /* ------------------------- auth + editor --------------------- */
 
-function LoginModal({ members, onLogin, onNew, onClose }) {
+function LoginModal({ onNew, onClose }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(23,22,27,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60, padding: 20 }}>
-      <div style={{ background: C.paperDeep, border: `1px solid ${C.ink}`, maxWidth: 460, width: "100%", padding: 28, maxHeight: "80vh", overflowY: "auto" }}>
+      <div style={{ background: C.paperDeep, border: `1px solid ${C.ink}`, maxWidth: 460, width: "100%", padding: 28 }}>
         <Eyebrow>Sign in</Eyebrow>
-        <div style={{ fontFamily: SANS, fontWeight: 800, fontSize: 23, color: C.ink, marginBottom: 6 }}>Who are you?</div>
+        <div style={{ fontFamily: SANS, fontWeight: 800, fontSize: 23, color: C.ink, marginBottom: 6 }}>New here?</div>
         <div style={{ fontFamily: SERIF, fontStyle: "italic", fontSize: 14, color: C.inkSoft, marginBottom: 18 }}>
-          Pick your name to edit your own record. (Prototype sign-in — no password.)
+          Join the wall in a minute. If you've already joined on this device, you're signed in
+          automatically — real phone sign-in for other devices is coming.
         </div>
-
         <button
           onClick={() => { onNew(); onClose(); }}
           style={{ width: "100%", textAlign: "left", fontFamily: MONO, fontSize: 12, letterSpacing: "0.14em", color: C.paper, background: C.indigo, border: "none", padding: "13px 15px", cursor: "pointer", marginBottom: 14 }}
         >
           + I'M NEW — JOIN THE WALL
         </button>
-
-        <div style={{ fontFamily: MONO, fontSize: 9, letterSpacing: "0.2em", color: C.inkSoft, marginBottom: 8 }}>OR SIGN IN AS A MEMBER</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {members.map((m) => (
-            <button
-              key={m.id}
-              onClick={() => { onLogin(m.id); onClose(); }}
-              style={{ textAlign: "left", fontFamily: SANS, fontWeight: 700, fontSize: 15, color: C.ink, background: C.paper, border: `1px solid ${C.line}`, padding: "11px 14px", cursor: "pointer" }}
-            >
-              {m.name}
-              <span style={{ fontFamily: SERIF, fontStyle: "italic", fontWeight: 400, fontSize: 12.5, color: C.inkSoft, marginLeft: 8 }}>{m.industry}</span>
-            </button>
-          ))}
-        </div>
-        <button onClick={onClose} style={{ marginTop: 14, fontFamily: MONO, fontSize: 11, letterSpacing: "0.2em", padding: "10px 16px", background: "transparent", color: C.ink, border: `1px solid ${C.ink}`, cursor: "pointer", width: "100%" }}>
+        <button onClick={onClose} style={{ fontFamily: MONO, fontSize: 11, letterSpacing: "0.2em", padding: "10px 16px", background: "transparent", color: C.ink, border: `1px solid ${C.ink}`, cursor: "pointer", width: "100%" }}>
           CANCEL
         </button>
       </div>
@@ -1067,8 +1056,9 @@ function ProfileEditor({ member, onSave, onClose }) {
 
 export default function CalcuttaAIClub() {
   const [tab, setTab] = useState("club");
-  const [members, setMembers] = useState(SEED_MEMBERS);
-  const [pitches, setPitches] = useState(SEED_PITCHES);
+  const [members, setMembers] = useState([]);
+  const [pitches, setPitches] = useState([]);
+  const [loaded, setLoaded] = useState(false);
   const [joining, setJoining] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);   // member id or null
   const [loginOpen, setLoginOpen] = useState(false);
@@ -1076,41 +1066,65 @@ export default function CalcuttaAIClub() {
 
   const me = members.find((m) => m.id === currentUser) || null;
 
-  const addMember = (data) => {
-    const id = Date.now();
-    setMembers([
-      ...members,
-      {
-        id,
-        name: data.name,
-        industry: data.industry || "Undeclared",
-        built: data.built || "",
-        buildInto: data.buildInto || "Undeclared",
-        tasteInto: data.tasteInto || "",
-        contrarian: data.contrarian || "",
-        ask: data.ask || "",
-        offer: data.offer || "",
-        dream: data.dream || "",
-        line: data.line || `New on the wall: ${data.built || "story still being written"}.`,
-        epithet: data.epithet || "Just walked in",
-        tags: data.tags || [],
-      },
-    ]);
-    setCurrentUser(id);   // onboarding signs you in
+  useEffect(() => {
+    (async () => {
+      try {
+        const [memberRows, pitchRows] = await Promise.all([api("/members"), api("/pitches")]);
+        setMembers(memberRows.map(adaptMember));
+        setPitches(pitchRows.map(adaptPitch));
+      } catch {
+        // Backend unreachable — the wall just starts empty rather than crashing.
+      } finally {
+        setLoaded(true);
+      }
+      const token = getToken();
+      if (token) {
+        try {
+          const me = await api("/me", { auth: true });
+          setCurrentUser(me.id);
+          setMembers((ms) => (ms.some((m) => m.id === me.id) ? ms : [adaptMember(me), ...ms]));
+        } catch {
+          // stale/invalid token — stay signed out
+        }
+      }
+    })();
+  }, []);
+
+  const addMember = (authResult) => {
+    if (!authResult) return;
+    setToken(authResult.token);
+    const adapted = adaptMember(authResult.member);
+    setMembers((ms) => [adapted, ...ms]);
+    setCurrentUser(adapted.id);
   };
 
-  const updateLine = (id, line) => {
+  const updateLine = async (id, line) => {
     if (id !== currentUser) return;   // owner-only
     setMembers((ms) => ms.map((m) => (m.id === id ? { ...m, line } : m)));
+    try {
+      await api("/me", { method: "PATCH", auth: true, body: { line } });
+    } catch {
+      // best-effort; the local card already reflects the edit
+    }
   };
 
-  const saveProfile = (updated) => {
-    setMembers((ms) => ms.map((m) => (m.id === updated.id ? { ...m, ...updated } : m)));
-    // In production every field change appends an edit event to the log.
-  };
-
-  const addComment = (pitchId, comment) => {
-    setPitches((ps) => ps.map((p) => (p.id === pitchId ? { ...p, comments: [...(p.comments || []), comment] } : p)));
+  const saveProfile = async (updated) => {
+    const body = {
+      line: updated.line,
+      field: updated.industry,
+      built: updated.built,
+      build_into: updated.buildInto,
+      taste: updated.tasteInto,
+      dream: updated.dream,
+      ask: updated.ask,
+      offer: updated.offer,
+    };
+    try {
+      const saved = await api("/me", { method: "PATCH", auth: true, body });
+      setMembers((ms) => ms.map((m) => (m.id === updated.id ? adaptMember(saved) : m)));
+    } catch {
+      setMembers((ms) => ms.map((m) => (m.id === updated.id ? { ...m, ...updated } : m)));
+    }
   };
 
   const tabs = [
@@ -1167,13 +1181,13 @@ export default function CalcuttaAIClub() {
       </div>
 
       <div style={{ maxWidth: 1080, margin: "0 auto", padding: "0 24px 80px" }}>
-        {tab === "club" && <FrontPage members={members} onJoin={() => setJoining(true)} onUpdateLine={updateLine} currentUser={currentUser} onEditProfile={() => setEditingProfile(true)} />}
-        {tab === "pitch" && <PitchBoard members={members} pitches={pitches} setPitches={setPitches} currentUser={currentUser} me={me} onComment={addComment} />}
+        {tab === "club" && <FrontPage members={members} pitchCount={pitches.length} onJoin={() => setJoining(true)} onUpdateLine={updateLine} currentUser={currentUser} onEditProfile={() => setEditingProfile(true)} />}
+        {tab === "pitch" && <PitchBoard members={members} pitches={pitches} setPitches={setPitches} currentUser={currentUser} me={me} />}
         {tab === "room" && <RoomTonight members={members} />}
       </div>
 
       {joining && <Onboarding onComplete={addMember} onClose={() => setJoining(false)} />}
-      {loginOpen && <LoginModal members={members} onLogin={setCurrentUser} onNew={() => setJoining(true)} onClose={() => setLoginOpen(false)} />}
+      {loginOpen && <LoginModal onNew={() => setJoining(true)} onClose={() => setLoginOpen(false)} />}
       {editingProfile && me && <ProfileEditor member={me} onSave={saveProfile} onClose={() => setEditingProfile(false)} />}
     </div>
   );
