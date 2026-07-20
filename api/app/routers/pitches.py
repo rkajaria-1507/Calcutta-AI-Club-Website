@@ -9,7 +9,8 @@ from app import anthropic_client
 from app.db import get_pool
 from app.deps import get_current_member_id
 from app.events import log_event
-from app.schemas import AuthorSummary, CommentCreate, CommentOut, PitchCreate, PitchOut
+from app.schemas.common import AuthorSummary
+from app.schemas.pitches import CommentCreate, CommentOut, PitchCreate, PitchOut
 
 router = APIRouter(tags=["pitches"])
 

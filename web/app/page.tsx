@@ -1,5 +1,5 @@
-import CalcuttaAIClub from "./CalcuttaAIClub";
+import ClubApp from "@/components/club-app";
 
 export default function Page() {
-  return <CalcuttaAIClub />;
+  return <ClubApp />;
 }

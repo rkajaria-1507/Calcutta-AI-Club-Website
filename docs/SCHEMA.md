@@ -138,6 +138,7 @@ survives a member deletion.
 | `checkin` | a member checks into a session | `{ session_id }` |
 | `corpus.asked` | someone queries the corpus chatbot | `{ question, matched: [ids] }` |
 | `pitch.matched` | the match engine runs for a pitch | `{ pitch_id, suggested }` |
+| `member.intake_form_submitted` | a member's data came from the pre-launch Google Form intake, not the in-app onboarding flow | `{ name, role, ai_usage, club_ask, socials_raw, phone_raw, submitted_at }` — the raw answers verbatim, so nothing is lost even where they only partially map onto `members.field`/`built`/`ask`. One event per submission; a member with duplicate submissions (same phone) gets one event per submission but only one `members` row (latest wins). |
 
 Reading the log powers, with **no new tables**: the ship-log/activity feed, the dream-collab
 heat map (aggregate `member.joined`/`member.edited` dream fields over time), "who's active,"

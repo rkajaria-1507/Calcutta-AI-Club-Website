@@ -8,7 +8,7 @@ from app.db import get_pool
 from app.deps import get_current_member_id
 from app.events import log_event
 from app.routers.pitches import _row_to_pitch
-from app.schemas import (
+from app.schemas.members import (
     MemberDetail,
     MemberOnboard,
     MemberOnboardResponse,

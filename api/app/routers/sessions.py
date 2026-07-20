@@ -6,16 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from app.db import get_pool
 from app.deps import get_current_member_id, require_admin
 from app.events import log_event
-from app.schemas import (
-    CheckinEntry,
-    CheckinOut,
-    RsvpMember,
-    RsvpOut,
-    RsvpRequest,
-    RsvpsGrouped,
-    SessionCreate,
-    SessionOut,
-)
+from app.schemas.rsvps import RsvpMember, RsvpOut, RsvpRequest, RsvpsGrouped
+from app.schemas.sessions import CheckinEntry, CheckinOut, SessionCreate, SessionOut
 
 router = APIRouter(tags=["sessions"])
 

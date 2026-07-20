@@ -7,7 +7,7 @@ from app import anthropic_client
 from app.db import get_pool
 from app.deps import get_optional_member_id
 from app.events import log_event
-from app.schemas import CorpusAskRequest, CorpusAskResponse
+from app.schemas.corpus import CorpusAskRequest, CorpusAskResponse
 
 router = APIRouter(tags=["corpus"])
 

@@ -2,7 +2,7 @@ import asyncpg
 from fastapi import APIRouter, Depends
 
 from app.db import get_pool
-from app.schemas import DreamOut
+from app.schemas.dreams import DreamOut
 
 router = APIRouter(tags=["dreams"])
 

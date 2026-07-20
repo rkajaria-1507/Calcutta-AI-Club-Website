@@ -10,7 +10,7 @@ action compounds into the club's memory.
 ## Where we are now (Phase 0 — done)
 
 - **Frontend is real and runnable.** The single-file React prototype is ported into the
-  Next.js app (`web/app/CalcuttaAIClub.jsx`, rendered by `web/app/page.tsx`). Three surfaces:
+  Next.js app (`web/components/club-app.tsx`, rendered by `web/app/page.tsx`). Three surfaces:
   The Club (front page + living directory + corpus chatbot), Pitch Board (post, match,
   discuss, dream collabs), Room Tonight (live check-in wall).
 - **Onboarding is the demo.** A guided five-question flow → a "reading you" beat → a reveal

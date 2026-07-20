@@ -46,7 +46,7 @@ export async function api<T>(
   return data as T;
 }
 
-// ---------- Types (mirror api/app/schemas.py) ----------
+// ---------- Types (mirror api/app/schemas/) ----------
 
 export type ApiMember = {
   id: string;

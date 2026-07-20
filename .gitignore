@@ -15,6 +15,9 @@ web/*.tsbuildinfo
 .ruff_cache/
 *.stackdump
 
+# graphify knowledge-graph output (regenerate locally with /graphify)
+graphify-out/
+
 # OS
 .DS_Store
 Thumbs.db
