@@ -7,71 +7,96 @@ action compounds into the club's memory.
 
 ---
 
-## Where we are now (Phase 0 — done)
+## Where we are now (Phases 0, 1 & 3 — done; updated 2026-07-20)
 
-- **Frontend is real and runnable.** The single-file React prototype is ported into the
-  Next.js app (`web/components/club-app.tsx`, rendered by `web/app/page.tsx`). Three surfaces:
-  The Club (front page + living directory + corpus chatbot), Pitch Board (post, match,
-  discuss, dream collabs), Room Tonight (live check-in wall).
-- **Onboarding is the demo.** A guided five-question flow → a "reading you" beat → a reveal
-  of the AI-written card → drop onto the wall, signed in.
-- **AI runs server-side already.** The three AI surfaces call Next.js route handlers under
-  `web/app/api/*` (`generate-profile`, `match-pitch`, `ask-corpus`), which hold the
-  Anthropic key server-side (`ANTHROPIC_API_KEY`). With no key set, each degrades to
-  deterministic local logic, so the app runs offline and the stage demo never stalls.
-- **Auth + editing are prototype-grade.** In-memory session; pick-a-name sign-in; a member
-  can edit *only their own* record and posts. Joining signs you in automatically.
-- **State is in-memory.** Refresh loses everything. This is the one thing Phase 1 fixes.
+- **Three-tier app is live and deployed.** Next.js frontend on Vercel
+  (`calcutta-ai-club.vercel.app`), FastAPI backend on Render
+  (`calcutta-ai-club-website.onrender.com`), Postgres on Supabase — all wired end to end and
+  verified against production. `web/components/club-app.tsx` (rendered by `web/app/page.tsx`)
+  owns three surfaces: The Club (front page + living directory + corpus chatbot), Pitch Board
+  (post, match, discuss, dream collabs), Room Tonight (live check-in wall).
+- **Persistence is real (Phase 1 — done).** Every table in `SCHEMA.md` is live in Supabase.
+  43 real members are seeded from the club's pre-launch Google Form intake (see
+  `member.intake_form_submitted` events). Joining, editing, posting a pitch, commenting — all
+  survive a refresh.
+- **AI is already consolidated into FastAPI (Phase 3 — done).** All three surfaces
+  (`_generate_card` in `routers/members.py`, `_match_pitch` in `routers/pitches.py`,
+  `ask_corpus` in `routers/corpus.py`) call `app/anthropic_client.py` server-side. No Next.js
+  API routes exist anymore. Each degrades to deterministic local logic if
+  `ANTHROPIC_API_KEY` is unset.
+- **JWT + ownership enforcement already work** (`api/app/security.py`, `api/app/deps.py`):
+  `create_access_token`/`decode_access_token`, `get_current_member_id` (Bearer header),
+  and a gated `PATCH /me` that lets a signed-in member edit only their own record.
 
-**Known limitation to state honestly on stage:** nothing persists yet, and the AI key, if
-set, currently lives in the Next.js server (fine for Vercel, but we want one backend holding
-it — Phase 3).
+**The one real gap, and it's a big one: Phase 2 (real identity) never got built.** The JWT
+machinery above only ever gets exercised at the moment of in-app onboarding — a member is
+issued a token *only* the instant they finish the five-question flow on some browser. There
+is no way to redeem that identity again from a different device or after clearing
+`localStorage`. Concretely: **all 43 imported members have a `members` row and a real phone
+number, but zero way to ever sign in** — they never ran onboarding, so no browser ever got
+their token. The Sign In modal says as much: *"real phone sign-in for other devices is
+coming."* Nothing else in the roadmap matters if people can't get into their own accounts —
+this is now the single highest-priority phase.
 
 ---
 
-## Phase 1 — Persistence (make it survive a refresh) ⭐ highest value
+## Phase 2 — Real identity (OTP sign-in) ⭐ highest priority, unblocks everything
 
-Turn the in-memory prototype into a real three-tier app.
+Replace "you're only signed in if this browser did your onboarding" with real phone + OTP
+sign-in that works from any device, for any of the 43 already-imported members.
 
-- Stand up the schema from `SCHEMA.md` in Supabase (paste the DDL).
-- Bring the FastAPI backend (`api/`) to the new model. The scaffold currently ships the
-  older ClubOS shape (projects/rsvps/votes); replace those routers with:
-  `members`, `pitches`, `comments`, `sessions`, `checkins`, and an `events` writer.
-  Follow the endpoint contract in `API.md`.
-- Wire the frontend to the backend: replace the `useState(SEED_*)` stores with fetches to
-  `NEXT_PUBLIC_API_URL`. Keep the seed data as a DB seed script so the wall is never empty.
-- **Every write also appends one `events` row** (see `SCHEMA.md`). This is the habit that
-  makes phases 4–6 free.
+**What already exists (don't rebuild):**
+- `auth_challenges` table (`id`, `phone`, `code_hash`, `expires_at`, `consumed_at`,
+  `created_at`) — live in Supabase, unused so far.
+- `create_access_token` / `decode_access_token` / `get_current_member_id` — fully working
+  JWT issuance and verification.
+- `PATCH /me`, `GET /me` — already gated correctly on the token; will work immediately for
+  every member the moment they can get a token.
+- Every imported member already has a normalized `phone` (E.164) — no data migration needed.
 
-**Acceptance:** join a member, refresh, they're still on the wall; post a pitch, refresh,
-it's still there.
+**What's actually missing:**
 
-## Phase 2 — Real identity (magic-link / OTP)
+1. **`POST /auth/request`** (new router, `api/app/routers/auth.py`)
+   - Input: `{ phone }`. Look up the member by phone; 404 if no member has that number
+     (don't leak which numbers exist vs don't — keep the response identical either way, or
+     defer that hardening to prod-abuse-notes below).
+   - Generate a 6-digit code, store `sha256(code)` in `auth_challenges` with a short
+     `expires_at` (~10 min), send the code via SMS.
+   - **Real product decision needed here, not just code:** which SMS provider sends OTPs to
+     Indian numbers (Twilio, MSG91, 2Factor, etc.) — pick one, get an account + sender ID
+     approved (India requires DLT template registration for transactional SMS), and hold
+     that provider's key the same way `ANTHROPIC_API_KEY` is held (Render env var, never
+     committed).
+   - Rate-limit this endpoint (e.g. max 3 requests per phone per 10 min) — an unthrottled
+     OTP-send endpoint is a spam/cost vector.
 
-Replace pick-a-name with name + phone → OTP.
+2. **`POST /auth/verify`**
+   - Input: `{ phone, code }`. Look up the latest unconsumed, unexpired `auth_challenges`
+     row for that phone, compare the hash, mark `consumed_at`, issue a JWT via
+     `create_access_token(member.id)`.
+   - 401 on mismatch/expired/already-consumed; no info leak about which case it was.
 
-- `POST /auth/request` issues a 6-digit code (store only its hash in `auth_challenges`),
-  `POST /auth/verify` redeems it and returns a JWT (member id in `sub`).
-- Frontend swaps the `LoginModal` roster for a phone-entry + code-entry step; onboarding's
-  final step collects phone and auto-verifies.
-- Ownership is now enforced server-side: the member id always comes from the token, never
-  the request body.
+3. **Frontend: replace the fake "Sign In" modal** (`web/components/auth/login-modal.tsx`)
+   - Two-step form: phone number → 6-digit code, calling the two endpoints above.
+   - On success, `setToken()` (already exists in `web/lib/api.ts`) and refetch `/me`.
+   - Onboarding's existing phone field becomes the same identity, not a separate concept —
+     after `POST /members` completes, either auto-run verify (if the product wants
+     zero-friction joining to stay instant) or immediately prompt for the OTP the member was
+     just sent, so onboarding and "log back in later" are one unified flow, not two.
 
-**Acceptance:** a signed-in member can edit only their own record; a second browser can't.
+4. **Ownership stays enforced exactly as it is today** — the member id always comes from the
+   verified token (`get_current_member_id`), never from the request body. No change needed
+   there; it already works correctly, it's just unreachable without step 1–3.
 
-## Phase 3 — Consolidate the AI edge into FastAPI
+**Acceptance:** any of the 43 imported members can, from any device, enter their phone
+number, receive a real SMS code, verify it, and land on `PATCH /me` able to edit their own
+card — with no dependency on which browser they used before.
 
-Move the three AI calls from Next route handlers into the backend so there is exactly one
-service holding the key and one place that logs to `events`.
-
-- `POST /members` (onboarding) generates the card server-side; `POST /pitches` runs the
-  match engine; `POST /corpus/ask` answers over the corpus. Same prompts as the Next routes.
-- Frontend points the three helpers at the backend instead of `/api/*`. Keep the
-  deterministic fallbacks client-side as the last line of defence.
-- Log `corpus.asked` and `pitch.matched` events for later analytics.
-
-**Acceptance:** the browser network tab shows no Anthropic calls and no key; all AI traffic
-goes through the backend.
+**Explicitly out of scope for this phase** (don't scope-creep it in): admin roles/accounts
+(separate, smaller follow-up — add an `is_admin` boolean to `members`, gate session-creation
+UI on it, retire or keep `ADMIN_SECRET` as a break-glass fallback), and Room Tonight's
+hardcoded "LIVE · SAT 25 JUL · PARK STREET" header (unrelated bug, one-line fix, track
+separately).
 
 ## Phase 4 — The introduction engine (the payoff for logging in) ⭐
 
@@ -126,11 +151,14 @@ season-long analytics from the `events` log · multi-club / multi-tenant (add an
 
 ## Sequencing rationale
 
-Persistence first (Phase 1) because a product that forgets isn't a product. Identity next
-(Phase 2) so ownership is real, not honour-system. Then consolidate AI (Phase 3) so there's
-one secure backend. Only then the compounding, sponsor-legible features (4–6), which are
-cheap precisely because the `events` spine and the `dream` field already exist. Room Tonight
-(Phase 7) is last because the scripted version already demos well.
+Persistence (Phase 1) and consolidating AI into one backend (Phase 3) are done — a product
+that forgets isn't a product, and a single service holding the Anthropic key was table
+stakes before going further. Identity (Phase 2) is next, and now the *only* blocker, because
+everything from here on — a member editing their own card, the introduction engine, any
+"signed-in" surface — is unreachable without it; ownership is enforced correctly in code
+today but unusable in practice. After that, the compounding, sponsor-legible features (4–6)
+are cheap precisely because the `events` spine and the `dream` field already exist. Room
+Tonight (Phase 7) is last because the scripted version already demos well.
 
 ## The five intake questions (the product's spine)
 
