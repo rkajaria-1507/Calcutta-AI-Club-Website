@@ -11,6 +11,7 @@ export function PitchSlide({ p, me }) {
   const [count, setCount] = useState(p.commentCount);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
 
   const toggle = async () => {
     const opening = !showComments;
@@ -28,6 +29,7 @@ export function PitchSlide({ p, me }) {
   const submit = async () => {
     if (!draft.trim() || !me) return;
     setBusy(true);
+    setError(null);
     try {
       const c = await api(`/pitches/${p.id}/comments`, {
         method: "POST",
@@ -39,6 +41,7 @@ export function PitchSlide({ p, me }) {
       setDraft("");
     } catch {
       // keep the draft so the member can retry
+      setError("Couldn't post that — try again.");
     } finally {
       setBusy(false);
     }
@@ -93,17 +96,24 @@ export function PitchSlide({ p, me }) {
               </div>
             )}
             {me ? (
-              <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-                <input
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && !busy && submit()}
-                  placeholder={`Reply as ${me.name.split(" ")[0]}…`}
-                  style={{ flex: 1, fontFamily: SERIF, fontSize: 14, color: C.ink, background: "transparent", border: "none", borderBottom: `1px solid ${C.line}`, padding: "6px 2px", outline: "none" }}
-                />
-                <button onClick={submit} disabled={busy} style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.16em", padding: "0 14px", background: C.indigo, color: C.paper, border: "none", cursor: "pointer" }}>
-                  {busy ? "…" : "SEND"}
-                </button>
+              <div>
+                <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                  <input
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && !busy && submit()}
+                    placeholder={`Reply as ${me.name.split(" ")[0]}…`}
+                    style={{ flex: 1, fontFamily: SERIF, fontSize: 14, color: C.ink, background: "transparent", border: "none", borderBottom: `1px solid ${C.line}`, padding: "6px 2px", outline: "none" }}
+                  />
+                  <button onClick={submit} disabled={busy} style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.16em", padding: "0 14px", background: C.indigo, color: C.paper, border: "none", cursor: "pointer" }}>
+                    {busy ? "…" : "SEND"}
+                  </button>
+                </div>
+                {error && (
+                  <div style={{ fontFamily: SERIF, fontStyle: "italic", fontSize: 12, color: C.stamp, marginTop: 6 }}>
+                    {error}
+                  </div>
+                )}
               </div>
             ) : (
               <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.14em", color: C.inkSoft, marginTop: 4 }}>

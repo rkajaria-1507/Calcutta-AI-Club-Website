@@ -1,12 +1,15 @@
+import json
+import logging
 from uuid import UUID
 
 import asyncpg
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from app import anthropic_client
 from app.db import get_pool
 from app.deps import get_current_member_id
 from app.events import log_event
+from app.limiter import limiter
 from app.routers.pitches import _row_to_pitch
 from app.schemas.members import (
     MemberDetail,
@@ -18,16 +21,25 @@ from app.schemas.members import (
 from app.security import create_access_token
 
 router = APIRouter(tags=["members"])
+logger = logging.getLogger(__name__)
 
 MEMBER_COLUMNS = """
     id, name, built, taste, contrarian, offer, ask, dream, socials,
     field, build_into, line, epithet, tags, created_at
 """
 
+# Columns a member is allowed to edit via PATCH /me. Kept explicit rather than trusting
+# MemberUpdate's field names alone, so a future schema field can't silently become editable.
+UPDATABLE_COLUMNS = {
+    "name", "built", "taste", "contrarian", "offer", "ask", "dream", "socials",
+    "field", "build_into", "line", "epithet", "tags",
+}
+
+PAGE_SIZE_DEFAULT = 50
+PAGE_SIZE_MAX = 200
+
 
 def _row_to_member(row: asyncpg.Record) -> MemberOut:
-    import json
-
     socials = row["socials"]
     if isinstance(socials, str):
         socials = json.loads(socials)
@@ -87,17 +99,17 @@ Return ONLY JSON, no markdown fences:
         text = await anthropic_client.complete(prompt)
         return anthropic_client.parse_json(text)
     except Exception:
+        logger.exception("members.onboard: anthropic call failed, falling back to deterministic card")
         return _fallback_card(body)
 
 
 @router.post("/members", response_model=MemberOnboardResponse, status_code=status.HTTP_201_CREATED)
-async def onboard_member(body: MemberOnboard, pool: asyncpg.Pool = Depends(get_pool)):
+@limiter.limit("3/hour")
+async def onboard_member(request: Request, body: MemberOnboard, pool: asyncpg.Pool = Depends(get_pool)):
     card = await _generate_card(body)
 
     async with pool.acquire() as conn:
         async with conn.transaction():
-            import json as jsonlib
-
             row = await conn.fetchrow(
                 f"""
                 insert into members (name, built, taste, contrarian, offer, ask, dream, socials,
@@ -112,7 +124,7 @@ async def onboard_member(body: MemberOnboard, pool: asyncpg.Pool = Depends(get_p
                 body.offer,
                 body.ask,
                 body.dream,
-                jsonlib.dumps(body.socials),
+                json.dumps(body.socials),
                 card.get("field"),
                 card.get("build_into"),
                 card.get("line"),
@@ -131,8 +143,16 @@ async def onboard_member(body: MemberOnboard, pool: asyncpg.Pool = Depends(get_p
 
 
 @router.get("/members", response_model=list[MemberOut])
-async def list_members(pool: asyncpg.Pool = Depends(get_pool)):
-    rows = await pool.fetch(f"select {MEMBER_COLUMNS} from members order by created_at desc")
+async def list_members(
+    pool: asyncpg.Pool = Depends(get_pool),
+    limit: int = Query(default=PAGE_SIZE_DEFAULT, ge=1, le=PAGE_SIZE_MAX),
+    offset: int = Query(default=0, ge=0),
+):
+    rows = await pool.fetch(
+        f"select {MEMBER_COLUMNS} from members order by created_at desc limit $1 offset $2",
+        limit,
+        offset,
+    )
     return [_row_to_member(row) for row in rows]
 
 
@@ -177,19 +197,17 @@ async def update_me(
     member_id: UUID = Depends(get_current_member_id),
     pool: asyncpg.Pool = Depends(get_pool),
 ):
-    fields = body.model_dump(exclude_unset=True)
+    fields = {k: v for k, v in body.model_dump(exclude_unset=True).items() if k in UPDATABLE_COLUMNS}
 
     async with pool.acquire() as conn:
         async with conn.transaction():
             if fields:
-                import json as jsonlib
-
                 set_clauses = []
                 values: list = []
                 for i, (key, value) in enumerate(fields.items(), start=1):
                     if key == "socials":
                         set_clauses.append(f"socials = ${i}::jsonb")
-                        values.append(jsonlib.dumps(value))
+                        values.append(json.dumps(value))
                     else:
                         set_clauses.append(f"{key} = ${i}")
                         values.append(value)

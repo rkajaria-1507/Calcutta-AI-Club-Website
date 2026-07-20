@@ -12,9 +12,17 @@ def has_key() -> bool:
     return bool(settings.anthropic_api_key)
 
 
-async def complete(prompt: str, max_tokens: int = 1000) -> str:
+async def complete(prompt: str, max_tokens: int = 1000, system: str | None = None) -> str:
     if not settings.anthropic_api_key:
         raise RuntimeError("ANTHROPIC_API_KEY not configured")
+
+    payload = {
+        "model": settings.anthropic_model,
+        "max_tokens": max_tokens,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    if system:
+        payload["system"] = system
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         res = await client.post(
@@ -24,11 +32,7 @@ async def complete(prompt: str, max_tokens: int = 1000) -> str:
                 "x-api-key": settings.anthropic_api_key,
                 "anthropic-version": "2023-06-01",
             },
-            json={
-                "model": settings.anthropic_model,
-                "max_tokens": max_tokens,
-                "messages": [{"role": "user", "content": prompt}],
-            },
+            json=payload,
         )
     if res.status_code >= 400:
         raise RuntimeError(f"anthropic {res.status_code}: {res.text[:200]}")

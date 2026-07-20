@@ -58,14 +58,18 @@ export default function ClubApp() {
 
   const updateLine = async (id, line) => {
     if (id !== currentUser) return;   // owner-only
+    const previous = members.find((m) => m.id === id)?.line;
     setMembers((ms) => ms.map((m) => (m.id === id ? { ...m, line } : m)));
     try {
       await api("/me", { method: "PATCH", auth: true, body: { line } });
-    } catch {
-      // best-effort; the local card already reflects the edit
+    } catch (err) {
+      // Revert the optimistic edit rather than pretending it saved.
+      setMembers((ms) => ms.map((m) => (m.id === id ? { ...m, line: previous } : m)));
+      console.error("Failed to save line:", err);
     }
   };
 
+  // Returns true on success, false on failure — callers decide how to surface the error.
   const saveProfile = async (updated) => {
     const body = {
       line: updated.line,
@@ -80,8 +84,10 @@ export default function ClubApp() {
     try {
       const saved = await api("/me", { method: "PATCH", auth: true, body });
       setMembers((ms) => ms.map((m) => (m.id === updated.id ? adaptMember(saved) : m)));
-    } catch {
-      setMembers((ms) => ms.map((m) => (m.id === updated.id ? { ...m, ...updated } : m)));
+      return true;
+    } catch (err) {
+      console.error("Failed to save profile:", err);
+      return false;
     }
   };
 

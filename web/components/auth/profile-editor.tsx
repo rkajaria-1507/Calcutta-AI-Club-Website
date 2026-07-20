@@ -7,7 +7,17 @@ import { Eyebrow } from "@/components/chrome/eyebrow";
 
 export function ProfileEditor({ member, onSave, onClose }) {
   const [f, setF] = useState({ ...member });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const submit = async () => {
+    setSaving(true);
+    setError(null);
+    const ok = await onSave(f);
+    setSaving(false);
+    if (ok) onClose();
+    else setError("Couldn't save — check your connection and try again.");
+  };
   const input = { width: "100%", padding: "11px 13px", fontFamily: SANS, fontSize: 14, background: C.paper, border: `1px solid ${C.line}`, color: C.ink, outline: "none", marginBottom: 12 };
   const label = { fontFamily: MONO, fontSize: 10, letterSpacing: "0.2em", color: C.inkSoft, textTransform: "uppercase", marginBottom: 6 };
   return (
@@ -40,9 +50,12 @@ export function ProfileEditor({ member, onSave, onClose }) {
             <input style={input} value={f.offer || ""} onChange={set("offer")} />
           </div>
         </div>
+        {error && (
+          <div style={{ fontFamily: SANS, fontSize: 12.5, color: "#b3261e", marginBottom: 10 }}>{error}</div>
+        )}
         <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
-          <button onClick={() => { onSave(f); onClose(); }} style={{ flex: 1, padding: "13px 0", background: C.indigo, color: C.paper, border: "none", fontFamily: MONO, fontSize: 12, letterSpacing: "0.2em", cursor: "pointer" }}>
-            SAVE MY RECORD
+          <button disabled={saving} onClick={submit} style={{ flex: 1, padding: "13px 0", background: C.indigo, color: C.paper, border: "none", fontFamily: MONO, fontSize: 12, letterSpacing: "0.2em", cursor: saving ? "default" : "pointer", opacity: saving ? 0.6 : 1 }}>
+            {saving ? "SAVING…" : "SAVE MY RECORD"}
           </button>
           <button onClick={onClose} style={{ padding: "13px 18px", background: "transparent", color: C.ink, border: `1px solid ${C.ink}`, fontFamily: MONO, fontSize: 12, letterSpacing: "0.2em", cursor: "pointer" }}>
             CLOSE

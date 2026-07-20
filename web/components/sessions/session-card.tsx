@@ -15,17 +15,31 @@ export function SessionCard({ me }) {
   const [session, setSession] = useState(undefined); // undefined = loading, null = none scheduled
   const [rsvps, setRsvps] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
 
   const load = async () => {
-    const all = await api("/sessions");
-    const upcoming = all.filter((s) => new Date(s.starts_at) >= new Date());
-    const next = upcoming[0] || null;
+    let next;
+    try {
+      const all = await api("/sessions");
+      const upcoming = all.filter((s) => new Date(s.starts_at) >= new Date());
+      next = upcoming[0] || null;
+    } catch {
+      setSession(null);
+      return;
+    }
     setSession(next);
-    if (next) setRsvps(await api(`/sessions/${next.id}/rsvps`));
+    if (next) {
+      try {
+        setRsvps(await api(`/sessions/${next.id}/rsvps`));
+      } catch {
+        // Session itself loaded fine — just show it without RSVP counts.
+        setRsvps(null);
+      }
+    }
   };
 
   useEffect(() => {
-    load().catch(() => setSession(null));
+    load();
   }, []);
 
   const myStatus = (() => {
@@ -39,11 +53,12 @@ export function SessionCard({ me }) {
   const rsvp = async (status) => {
     if (!me || !session || busy) return;
     setBusy(true);
+    setError(null);
     try {
       await api(`/sessions/${session.id}/rsvp`, { method: "PUT", auth: true, body: { status } });
       setRsvps(await api(`/sessions/${session.id}/rsvps`));
     } catch {
-      // best-effort
+      setError("Couldn't update your RSVP — try again.");
     } finally {
       setBusy(false);
     }
@@ -100,6 +115,11 @@ export function SessionCard({ me }) {
         {rsvpBtn("maybe", "MAYBE")}
         {rsvpBtn("no", "CAN'T MAKE IT")}
       </div>
+      {error && (
+        <div style={{ fontFamily: SERIF, fontStyle: "italic", fontSize: 12.5, color: C.stamp, marginTop: 8 }}>
+          {error}
+        </div>
+      )}
     </div>
   );
 }

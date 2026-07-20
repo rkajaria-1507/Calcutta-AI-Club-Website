@@ -1,3 +1,4 @@
+import hmac
 from uuid import UUID
 
 import jwt
@@ -28,11 +29,15 @@ async def get_optional_member_id(authorization: str | None = Header(default=None
         return None
 
 
+def _matches_admin_secret(x_admin_secret: str | None) -> bool:
+    return bool(x_admin_secret) and hmac.compare_digest(x_admin_secret, settings.admin_secret)
+
+
 async def require_admin(x_admin_secret: str | None = Header(default=None)) -> None:
-    if not x_admin_secret or x_admin_secret != settings.admin_secret:
+    if not _matches_admin_secret(x_admin_secret):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid admin secret")
 
 
 async def is_admin(x_admin_secret: str | None = Header(default=None)) -> bool:
     """Non-raising admin check, for endpoints where admin is one of several allowed roles."""
-    return bool(x_admin_secret) and x_admin_secret == settings.admin_secret
+    return _matches_admin_secret(x_admin_secret)

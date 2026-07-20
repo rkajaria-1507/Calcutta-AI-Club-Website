@@ -139,5 +139,7 @@ async def list_rsvps(session_id: UUID, pool: asyncpg.Pool = Depends(get_pool)):
     )
     grouped = {"going": [], "maybe": [], "no": []}
     for row in rows:
-        grouped[row["status"]].append(RsvpMember(id=row["id"], name=row["name"], epithet=row["epithet"]))
+        bucket = grouped.get(row["status"])
+        if bucket is not None:
+            bucket.append(RsvpMember(id=row["id"], name=row["name"], epithet=row["epithet"]))
     return RsvpsGrouped(**grouped)
