@@ -11,6 +11,7 @@ import { RoomTonight } from "@/components/room-tonight/room-tonight";
 import { Onboarding } from "@/components/onboarding/onboarding";
 import { LoginModal } from "@/components/auth/login-modal";
 import { ProfileEditor } from "@/components/auth/profile-editor";
+import { AdminPanel } from "@/components/admin/admin-panel";
 
 export default function ClubApp() {
   const [tab, setTab] = useState("club");
@@ -21,6 +22,7 @@ export default function ClubApp() {
   const [currentUser, setCurrentUser] = useState(null);   // member id or null
   const [loginOpen, setLoginOpen] = useState(false);
   const [editingProfile, setEditingProfile] = useState(false);
+  const [adminOpen, setAdminOpen] = useState(false);
 
   const me = members.find((m) => m.id === currentUser) || null;
 
@@ -124,6 +126,13 @@ export default function ClubApp() {
                 {t.label}
               </button>
             ))}
+            <button
+              onClick={() => setAdminOpen(true)}
+              title="Admin"
+              style={{ border: "none", borderLeft: `1px solid ${C.line}`, background: "transparent", color: C.inkSoft, fontFamily: MONO, fontSize: 11, letterSpacing: "0.16em", padding: "0 14px", cursor: "pointer" }}
+            >
+              ADMIN
+            </button>
             {me ? (
               <button
                 onClick={() => setEditingProfile(true)}
@@ -153,6 +162,7 @@ export default function ClubApp() {
       {joining && <Onboarding onComplete={addMember} onClose={() => setJoining(false)} />}
       {loginOpen && <LoginModal onNew={() => setJoining(true)} onClose={() => setLoginOpen(false)} />}
       {editingProfile && me && <ProfileEditor member={me} onSave={saveProfile} onClose={() => setEditingProfile(false)} />}
+      {adminOpen && <AdminPanel onClose={() => setAdminOpen(false)} />}
     </div>
   );
 }

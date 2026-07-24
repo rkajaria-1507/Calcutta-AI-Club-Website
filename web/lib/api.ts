@@ -1,5 +1,6 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const TOKEN_KEY = "cac_token";
+const ADMIN_SECRET_KEY = "cac_admin_secret";
 
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -14,6 +15,21 @@ export function clearToken() {
   window.localStorage.removeItem(TOKEN_KEY);
 }
 
+// Admin isn't a real account — just the shared ADMIN_SECRET, entered once and kept
+// client-side the same way the member token is. See docs/ARCHITECTURE.md on the gap.
+export function getAdminSecret(): string | null {
+  if (typeof window === "undefined") return null;
+  return window.localStorage.getItem(ADMIN_SECRET_KEY);
+}
+
+export function setAdminSecret(secret: string) {
+  window.localStorage.setItem(ADMIN_SECRET_KEY, secret);
+}
+
+export function clearAdminSecret() {
+  window.localStorage.removeItem(ADMIN_SECRET_KEY);
+}
+
 export class ApiError extends Error {
   status: number;
   constructor(status: number, message: string) {
@@ -24,12 +40,16 @@ export class ApiError extends Error {
 
 export async function api<T>(
   path: string,
-  options: { method?: string; body?: unknown; auth?: boolean } = {}
+  options: { method?: string; body?: unknown; auth?: boolean; admin?: boolean } = {}
 ): Promise<T> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (options.auth) {
     const token = getToken();
     if (token) headers["Authorization"] = `Bearer ${token}`;
+  }
+  if (options.admin) {
+    const secret = getAdminSecret();
+    if (secret) headers["X-Admin-Secret"] = secret;
   }
 
   const res = await fetch(`${API_URL}${path}`, {
