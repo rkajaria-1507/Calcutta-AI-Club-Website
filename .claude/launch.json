@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "web", "run", "dev"],
       "port": 3000
+    },
+    {
+      "name": "api",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "cd api && .venv\\Scripts\\uvicorn.exe app.main:app --reload --port 8000"],
+      "port": 8000
     }
   ]
 }
