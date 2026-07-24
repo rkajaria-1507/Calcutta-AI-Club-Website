@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 import asyncpg
@@ -10,6 +11,18 @@ from app.schemas.rsvps import RsvpMember, RsvpOut, RsvpRequest, RsvpsGrouped
 from app.schemas.sessions import CheckinEntry, CheckinOut, SessionCreate, SessionOut
 
 router = APIRouter(tags=["sessions"])
+
+# How long after a session starts that RSVP/check-in stays open — covers sessions
+# running long, without letting people RSVP/check in to something from last month.
+SESSION_GRACE = timedelta(hours=6)
+
+
+async def _get_active_session_or_404(pool: asyncpg.Pool, session_id: UUID) -> None:
+    starts_at = await pool.fetchval("select starts_at from sessions where id = $1", session_id)
+    if starts_at is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session not found")
+    if datetime.now(timezone.utc) > starts_at + SESSION_GRACE:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="session has already ended")
 
 
 def _row_to_session(row: asyncpg.Record) -> SessionOut:
@@ -49,9 +62,7 @@ async def checkin(
     member_id: UUID = Depends(get_current_member_id),
     pool: asyncpg.Pool = Depends(get_pool),
 ):
-    session_exists = await pool.fetchval("select 1 from sessions where id = $1", session_id)
-    if session_exists is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session not found")
+    await _get_active_session_or_404(pool, session_id)
 
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -103,7 +114,7 @@ async def upsert_rsvp(
     member_id: UUID = Depends(get_current_member_id),
     pool: asyncpg.Pool = Depends(get_pool),
 ):
-    await _get_session_or_404(pool, session_id)
+    await _get_active_session_or_404(pool, session_id)
 
     async with pool.acquire() as conn:
         async with conn.transaction():

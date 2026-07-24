@@ -41,7 +41,7 @@ class MemberOnboardResponse(BaseModel):
 
 
 class MemberUpdate(BaseModel):
-    name: str | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=80)
     built: str | None = None
     taste: str | None = None
     contrarian: str | None = None

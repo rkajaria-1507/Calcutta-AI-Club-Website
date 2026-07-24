@@ -230,6 +230,24 @@ The live Room Tonight wall, newest first.
     "ask": "an internship that isn't boring", "created_at": "…" } ]
 ```
 
+### PUT /sessions/{id}/rsvp — member
+Idempotent upsert — re-sending with a new status overwrites the old one. Emits `rsvp`.
+Blocked with `400` once the session is more than 6h past its `starts_at` (see checkin's
+same window) — `404` if the session doesn't exist.
+```json
+// request
+{ "status": "going" }  // one of: going | maybe | no
+// 200 -> { "session_id": "…", "member_id": "…", "status": "going" }
+```
+
+### GET /sessions/{id}/rsvps — public
+RSVPs grouped by status, oldest first within each group.
+```json
+// 200
+{ "going": [ { "id": "…", "name": "…", "epithet": "…" } ],
+  "maybe": [], "no": [] }
+```
+
 ---
 
 ## Ops
@@ -265,5 +283,7 @@ load). Return a static body.
 | POST | /sessions | admin | create a session |
 | POST | /sessions/{id}/checkin | member | check in (idempotent) |
 | GET | /sessions/{id}/checkins | public | ⭐ polled live wall |
+| PUT | /sessions/{id}/rsvp | member | RSVP going/maybe/no (idempotent) |
+| GET | /sessions/{id}/rsvps | public | RSVPs grouped by status |
 | GET | /health | public | keep-warm |
 

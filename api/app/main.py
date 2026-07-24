@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.config import settings
 from app.db import connect_db, disconnect_db
@@ -32,6 +33,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Render (and most PaaS hosts) sit the app behind a single reverse proxy; without this,
+# every request's client IP is the proxy's, collapsing slowapi's per-IP limits into one
+# shared bucket for all users. trusted_hosts="*" trusts the one hop we're always behind.
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
 app.include_router(health.router)
 app.include_router(members.router)
