@@ -149,7 +149,7 @@ async def list_members(
     offset: int = Query(default=0, ge=0),
 ):
     rows = await pool.fetch(
-        f"select {MEMBER_COLUMNS} from members order by created_at desc limit $1 offset $2",
+        f"select {MEMBER_COLUMNS} from members where deleted_at is null order by created_at desc limit $1 offset $2",
         limit,
         offset,
     )
@@ -158,7 +158,9 @@ async def list_members(
 
 @router.get("/members/{member_id}", response_model=MemberDetail)
 async def get_member(member_id: UUID, pool: asyncpg.Pool = Depends(get_pool)):
-    member_row = await pool.fetchrow(f"select {MEMBER_COLUMNS} from members where id = $1", member_id)
+    member_row = await pool.fetchrow(
+        f"select {MEMBER_COLUMNS} from members where id = $1 and deleted_at is null", member_id
+    )
     if member_row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="member not found")
 
@@ -166,10 +168,10 @@ async def get_member(member_id: UUID, pool: asyncpg.Pool = Depends(get_pool)):
         """
         select p.id, p.title, p.idea, p.ask, p.suggested, p.created_at,
                m.id as author_id, m.name as author_name,
-               (select count(*) from comments c where c.pitch_id = p.id) as comment_count
+               (select count(*) from comments c where c.pitch_id = p.id and c.deleted_at is null) as comment_count
         from pitches p
         join members m on m.id = p.author_id
-        where p.author_id = $1
+        where p.author_id = $1 and p.deleted_at is null
         order by p.created_at desc
         """,
         member_id,
@@ -185,7 +187,7 @@ async def get_me(
     member_id: UUID = Depends(get_current_member_id),
     pool: asyncpg.Pool = Depends(get_pool),
 ):
-    row = await pool.fetchrow(f"select {MEMBER_COLUMNS} from members where id = $1", member_id)
+    row = await pool.fetchrow(f"select {MEMBER_COLUMNS} from members where id = $1 and deleted_at is null", member_id)
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="member not found")
     return _row_to_member(row)
@@ -213,13 +215,33 @@ async def update_me(
                         values.append(value)
                 values.append(member_id)
                 await conn.execute(
-                    f"update members set {', '.join(set_clauses)} where id = ${len(values)}",
+                    f"update members set {', '.join(set_clauses)} where id = ${len(values)} and deleted_at is null",
                     *values,
                 )
                 await log_event(conn, member_id, "member.edited", {"changed": list(fields.keys())})
 
-            row = await conn.fetchrow(f"select {MEMBER_COLUMNS} from members where id = $1", member_id)
+            row = await conn.fetchrow(
+                f"select {MEMBER_COLUMNS} from members where id = $1 and deleted_at is null", member_id
+            )
 
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="member not found")
     return _row_to_member(row)
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_me(
+    member_id: UUID = Depends(get_current_member_id),
+    pool: asyncpg.Pool = Depends(get_pool),
+):
+    """Soft-delete: stamps deleted_at rather than removing the row, so the events log and
+    any pitches/comments the member authored keep a valid (if now-hidden) author reference."""
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            updated = await conn.fetchval(
+                "update members set deleted_at = now() where id = $1 and deleted_at is null returning id",
+                member_id,
+            )
+            if updated is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="member not found")
+            await log_event(conn, member_id, "member.deleted", {})

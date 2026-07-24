@@ -16,6 +16,11 @@ Design rules:
   constraints**, not application code.
 - `ON DELETE CASCADE` from a parent so cleanup is automatic; `ON DELETE SET NULL` where a
   record should survive its actor (events, pitch authorship history).
+- **Soft delete, not hard delete**, on the user-owned tables (`members`, `pitches`,
+  `comments`, `sessions`): a `deleted_at timestamptz` column, `null` while live. `DELETE`
+  endpoints stamp it instead of removing the row, so the `events` history and any rows that
+  reference the deleted one (a deleted member's pitches, a deleted pitch's comments) keep a
+  valid foreign key. Every read query filters `where deleted_at is null`.
 
 ---
 
@@ -139,6 +144,9 @@ survives a member deletion.
 | `corpus.asked` | someone queries the corpus chatbot | `{ question, matched: [ids] }` |
 | `pitch.matched` | the match engine runs for a pitch | `{ pitch_id, suggested }` |
 | `member.intake_form_submitted` | a member's data came from the pre-launch Google Form intake, not the in-app onboarding flow | `{ name, role, ai_usage, club_ask, socials_raw, phone_raw, submitted_at }` — the raw answers verbatim, so nothing is lost even where they only partially map onto `members.field`/`built`/`ask`. One event per submission; a member with duplicate submissions (same phone) gets one event per submission but only one `members` row (latest wins). |
+| `member.deleted` | a member soft-deletes their own account | `{}` |
+| `pitch.deleted` | the author soft-deletes their pitch | `{ pitch_id }` |
+| `comment.deleted` | the author soft-deletes their comment | `{ pitch_id, comment_id }` |
 
 Reading the log powers, with **no new tables**: the ship-log/activity feed, the dream-collab
 heat map (aggregate `member.joined`/`member.edited` dream fields over time), "who's active,"
@@ -218,7 +226,8 @@ create table members (
   epithet     text,
   tags        text[] not null default '{}',
   created_at  timestamptz not null default now(),
-  updated_at  timestamptz not null default now()
+  updated_at  timestamptz not null default now(),
+  deleted_at  timestamptz null
 );
 
 create table pitches (
@@ -228,7 +237,8 @@ create table pitches (
   idea       text not null,
   ask        text,
   suggested  jsonb not null default '[]',
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  deleted_at timestamptz null
 );
 
 create table comments (
@@ -236,7 +246,8 @@ create table comments (
   pitch_id   uuid not null references pitches(id) on delete cascade,
   author_id  uuid not null references members(id) on delete cascade,
   body       text not null,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  deleted_at timestamptz null
 );
 
 create table sessions (
@@ -245,7 +256,8 @@ create table sessions (
   topic      text,
   venue      text,
   starts_at  timestamptz not null,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  deleted_at timestamptz null
 );
 
 create table checkins (

@@ -74,6 +74,14 @@ Edit your own record. Only provided fields change. Emits `member.edited` with th
 // 200 -> updated member
 ```
 
+### DELETE /me — member
+**Soft delete** — stamps `deleted_at`, doesn't remove the row. You disappear from the
+directory and stop being able to sign back in with your old token, but your pitches/comments
+and the `events` history keep a valid (now-hidden) author. Emits `member.deleted`.
+```json
+// 204, empty body
+```
+
 ---
 
 ## Onboarding
@@ -184,6 +192,18 @@ Reply to a pitch. Author from token. Emits `comment.posted`.
 // 201 -> the created comment
 ```
 
+### DELETE /pitches/{id} — member, author only
+**Soft delete.** `403` if you're not the author, `404` if it's already gone. Emits `pitch.deleted`.
+```json
+// 204, empty body
+```
+
+### DELETE /pitches/{id}/comments/{comment_id} — member, author only
+**Soft delete.** Same auth rules as above. Emits `comment.deleted`.
+```json
+// 204, empty body
+```
+
 ---
 
 ## Dream collabs
@@ -248,6 +268,13 @@ RSVPs grouped by status, oldest first within each group.
   "maybe": [], "no": [] }
 ```
 
+### DELETE /sessions/{id} — admin
+**Soft delete** — stamps `deleted_at`; checkins/RSVPs and the `events` history stay intact,
+the session just stops appearing anywhere.
+```json
+// 204, empty body
+```
+
 ---
 
 ## Ops
@@ -270,17 +297,21 @@ load). Return a static body.
 | POST | /auth/verify | public | redeem code → token + member |
 | GET | /me | member | own record |
 | PATCH | /me | member | edit own record |
+| DELETE | /me | member | soft-delete own account |
 | POST | /members | public | ⭐ onboard: generate card + token |
 | GET | /members | public | the wall |
 | GET | /members/{id} | public | member + their pitches |
 | POST | /corpus/ask | public | corpus chatbot |
 | GET | /pitches | public | the pitch board |
 | POST | /pitches | member | post a pitch (+ AI match) |
+| DELETE | /pitches/{id} | member (author) | soft-delete own pitch |
 | GET | /pitches/{id}/comments | public | pitch thread |
 | POST | /pitches/{id}/comments | member | reply |
+| DELETE | /pitches/{id}/comments/{comment_id} | member (author) | soft-delete own comment |
 | GET | /dreams | public | dream-collab aggregation |
 | GET | /sessions | public | list sessions |
 | POST | /sessions | admin | create a session |
+| DELETE | /sessions/{id} | admin | soft-delete a session |
 | POST | /sessions/{id}/checkin | member | check in (idempotent) |
 | GET | /sessions/{id}/checkins | public | ⭐ polled live wall |
 | PUT | /sessions/{id}/rsvp | member | RSVP going/maybe/no (idempotent) |

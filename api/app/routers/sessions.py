@@ -18,7 +18,9 @@ SESSION_GRACE = timedelta(hours=6)
 
 
 async def _get_active_session_or_404(pool: asyncpg.Pool, session_id: UUID) -> None:
-    starts_at = await pool.fetchval("select starts_at from sessions where id = $1", session_id)
+    starts_at = await pool.fetchval(
+        "select starts_at from sessions where id = $1 and deleted_at is null", session_id
+    )
     if starts_at is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session not found")
     if datetime.now(timezone.utc) > starts_at + SESSION_GRACE:
@@ -31,7 +33,9 @@ def _row_to_session(row: asyncpg.Record) -> SessionOut:
 
 @router.get("/sessions", response_model=list[SessionOut])
 async def list_sessions(pool: asyncpg.Pool = Depends(get_pool)):
-    rows = await pool.fetch("select id, title, topic, venue, starts_at from sessions order by starts_at asc")
+    rows = await pool.fetch(
+        "select id, title, topic, venue, starts_at from sessions where deleted_at is null order by starts_at asc"
+    )
     return [_row_to_session(row) for row in rows]
 
 
@@ -54,6 +58,22 @@ async def create_session(body: SessionCreate, pool: asyncpg.Pool = Depends(get_p
         body.starts_at,
     )
     return _row_to_session(row)
+
+
+@router.delete(
+    "/sessions/{session_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_admin)],
+)
+async def delete_session(session_id: UUID, pool: asyncpg.Pool = Depends(get_pool)):
+    """Soft-delete: stamps deleted_at, doesn't remove the row — checkins/RSVPs and the
+    events history stay intact, the session just stops appearing anywhere."""
+    updated = await pool.fetchval(
+        "update sessions set deleted_at = now() where id = $1 and deleted_at is null returning id",
+        session_id,
+    )
+    if updated is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session not found")
 
 
 @router.post("/sessions/{session_id}/checkin", response_model=CheckinOut, status_code=status.HTTP_201_CREATED)
@@ -102,7 +122,7 @@ async def list_checkins(session_id: UUID, pool: asyncpg.Pool = Depends(get_pool)
 
 
 async def _get_session_or_404(pool: asyncpg.Pool, session_id: UUID) -> None:
-    exists = await pool.fetchval("select 1 from sessions where id = $1", session_id)
+    exists = await pool.fetchval("select 1 from sessions where id = $1 and deleted_at is null", session_id)
     if exists is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session not found")
 
