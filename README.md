@@ -41,10 +41,10 @@ Room Tonight is still the scripted check-in demo — live check-ins are `docs/RO
 7, intentionally last. Real phone/OTP auth (currently: join once per browser, session restored
 from a stored token) is Phase 2.
 
-**Not yet deployed together**: the frontend is live on Vercel, but the FastAPI backend isn't
-deployed anywhere yet, so the production site still runs against whatever
-`NEXT_PUBLIC_API_URL` is set to in Vercel. Deploying `api/` (Render or similar) and pointing
-Vercel's env var at it is the remaining step to make the hosted demo fully live.
+**Fully deployed and live**: frontend on Vercel (https://calcutta-ai-club.vercel.app),
+backend on Render (https://calcutta-ai-club-website.onrender.com), both auto-deploying from
+`main`. Verified end-to-end against production — the live directory, corpus chatbot, and
+CORS between the two hosts all work.
 
 ## Quickstart
 
